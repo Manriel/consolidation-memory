@@ -52,7 +52,7 @@ Prioritized blind spots — check this before large refactors; update when fixed
 **P1 (enforcement / ops)** — addressed 2026-06-15
 - ~~`coding_agent_eval` CI gate~~: `quick` mode in `novelty_gates` job. `real_world_eval` remains manual (live corpus).
 - ~~`embedding_disk_cache` cross-process lock~~: `.embedding_cache_write.lock` via `process_write_lock.py`.
-- ~~`SECURITY.md` + MCP trust boundary~~: stdio trust model documented; supported line is `0.19.x`.
+- ~~`SECURITY.md` + MCP trust boundary~~: stdio trust model documented; supported line is `0.20.x`.
 - ~~Hygiene surface parity~~: `memory_hygiene_scan` / `memory_hygiene_apply` on MCP, REST, OpenAI dispatch, CLI, web UI, desktop.
 - ~~`rest.py` E402~~: imports ordered above type aliases.
 - ~~`tool_adapter` recall parity~~: shared deferred-knowledge + deadline semantics across MCP/REST/OpenAI.
@@ -68,9 +68,12 @@ Prioritized blind spots — check this before large refactors; update when fixed
 - ~~LoCoMo narrative~~: `docs/LOCOMO_BENCHMARK.md` (full run needs API key).
 
 **Maintainer reminders (not debt)**
-- Full MCP profile ships **30 tools**; simple profile exposes 3 (`memory_recall`, `memory_remember`, `memory_ask`).
+- Full MCP profile ships **28 tools**; simple profile exposes 3 (`memory_recall`, `memory_remember`, `memory_ask`).
 - `forget()` expires claims that lose all provenance; consolidated knowledge can lag code — use `memory_correct` or new episodes + consolidate.
 - Run `memory_hygiene_scan` on noisy corpora; verify with `ruff check src tests/`, `mypy src/consolidation_memory/`, `pytest tests/ -q`.
+
+**Runtime residual (P0-1, mitigated 2026-07-10)**
+- **Windows SciPy import hang on MCP workers**: mitigated by lazy `consolidation` package export, lightweight `status` import isolation, main-thread SciPy preload, and bounded MCP tool timeouts. Residual: first consolidate still requires SciPy — preload on main thread / `_ensure_scipy_for_consolidate()` before worker. Regression: `tests/test_import_isolation.py`, `scripts/smoke_mcp_stdio.py`.
 
 **Keep (do not rewrite)**
 - Episodes → records → claims → topics stack; `tool_dispatch` seam; FAISS write lease; fast-path before LLM; `query_service` envelopes.

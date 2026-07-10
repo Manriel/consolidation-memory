@@ -23,7 +23,7 @@ current base. Re-run sync before pushing or after long idle gaps.
 
 ## Audit-aligned maintainer checks (2026-06-15)
 
-- Full MCP profile = **30 tools**; simple profile = `memory_recall`, `memory_remember`, `memory_ask`.
+- Full MCP profile = **28 tools**; simple profile = `memory_recall`, `memory_remember`, `memory_ask`.
 - Hygiene: `memory_hygiene_scan` / `memory_hygiene_apply` (global-by-design); `forget()` expires orphan claims.
 - Consolidated knowledge can lag code — use `memory_correct` or superseding episodes + consolidate.
 - New tools: ship on MCP + REST + OpenAI dispatch + tests; document scope-aware vs global in CONTRIBUTING.

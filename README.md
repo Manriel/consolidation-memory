@@ -172,18 +172,22 @@ Use an **absolute Python path** — more reliable than a console script, especia
       "args": ["-m", "consolidation_memory", "--project", "default", "serve"],
       "env": {
         "PYTHONUNBUFFERED": "1",
-        "CONSOLIDATION_MEMORY_IDLE_TIMEOUT_SECONDS": "900"
+        "CONSOLIDATION_MEMORY_IDLE_TIMEOUT_SECONDS": "900",
+        "CONSOLIDATION_MEMORY_STATUS_LIGHTWEIGHT": "1",
+        "CONSOLIDATION_MEMORY_MCP_AUTO_CONSOLIDATE": "0",
+        "CONSOLIDATION_MEMORY_PRELOAD_SCIPY_ON_START": "1",
+        "CONSOLIDATION_MEMORY_DEFERRED_KNOWLEDGE_RETRY_SECONDS": "0"
       }
     }
   }
 }
 ```
 
+`consolidation-memory init` prints the full recommended env (timeouts, warmup, lightweight status).
 Drop-in configs: [Cursor](examples/cursor-integration/README.md) · [Continue](examples/continue-dev/README.md)
 
-**Simple profile** (3 tools for newcomers): add `"CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE": "simple"` to
-`env` — exposes `memory_recall`, `memory_remember`, and `memory_ask` only. `consolidation-memory init`
-prints both full and simple JSON snippets.
+**Simple profile** (3 of **28** full-profile tools): add `"CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE": "simple"` to
+`env` — exposes `memory_recall`, `memory_remember`, and `memory_ask` only.
 
 ### MCP tools (representative)
 

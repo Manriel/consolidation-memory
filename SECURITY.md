@@ -6,9 +6,9 @@ The project currently supports security fixes for the latest published minor rel
 
 | Version line | Supported |
 | --- | --- |
-| `0.19.x` | Yes |
-| `0.18.x` | Best-effort (upgrade to `0.19.x`) |
-| `<0.18.0` | No |
+| `0.20.x` | Yes |
+| `0.19.x` | Best-effort (upgrade to `0.20.x`) |
+| `<0.19.0` | No |
 
 ## Trust Boundaries
 

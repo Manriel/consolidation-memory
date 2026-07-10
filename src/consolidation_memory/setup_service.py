@@ -16,7 +16,19 @@ def _toml_basic_string(value: str) -> str:
 
 
 def recommended_mcp_fast_env() -> dict[str, str]:
-    """Environment overrides for low-latency MCP tool calls."""
+    """Environment overrides for low-latency MCP tool calls.
+
+    Notes for agent hosts:
+    - Use ``sys.executable`` (or an absolute interpreter path) as the MCP
+      ``command`` so PATH drift cannot break the server.
+    - ``STATUS_LIGHTWEIGHT=1`` avoids markdown consistency scans on status.
+    - ``MCP_AUTO_CONSOLIDATE=0`` keeps consolidate off the interactive path.
+    - ``DEFERRED_KNOWLEDGE_RETRY_SECONDS=0`` returns episodes immediately when
+      record embeddings are still warming (call ``memory_recall`` again shortly
+      for full knowledge). Raise to a few seconds only if the host can wait.
+    - ``PRELOAD_SCIPY_ON_START=1`` loads SciPy on the main thread so consolidate
+      does not hang on Windows worker-thread native imports.
+    """
     return {
         "PYTHONUNBUFFERED": "1",
         "CONSOLIDATION_MEMORY_IDLE_TIMEOUT_SECONDS": "900",
@@ -24,6 +36,7 @@ def recommended_mcp_fast_env() -> dict[str, str]:
         "CONSOLIDATION_MEMORY_LLM_BACKEND": "disabled",
         "CONSOLIDATION_MEMORY_WARMUP_ON_START": "1",
         "CONSOLIDATION_MEMORY_PRELOAD_NUMERIC_BACKENDS_ON_START": "1",
+        "CONSOLIDATION_MEMORY_PRELOAD_SCIPY_ON_START": "1",
         "CONSOLIDATION_MEMORY_STATUS_LIGHTWEIGHT": "1",
         "CONSOLIDATION_MEMORY_MCP_AUTO_CONSOLIDATE": "0",
         "CONSOLIDATION_MEMORY_CONSOLIDATION_AUTO_RUN": "0",
@@ -34,7 +47,11 @@ def recommended_mcp_fast_env() -> dict[str, str]:
         "CONSOLIDATION_MEMORY_CLIENT_INIT_TIMEOUT_SECONDS": "20",
         "CONSOLIDATION_MEMORY_RECALL_TIMEOUT_SECONDS": "25",
         "CONSOLIDATION_MEMORY_RECALL_FALLBACK_TIMEOUT_SECONDS": "10",
+        # Interactive agents: do not block the first recall on cache warm retry.
         "CONSOLIDATION_MEMORY_DEFERRED_KNOWLEDGE_RETRY_SECONDS": "0",
+        "CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS": "60",
+        "CONSOLIDATION_MEMORY_TIMEOUT_MEMORY_STATUS": "30",
+        "CONSOLIDATION_MEMORY_TIMEOUT_MEMORY_CONSOLIDATE": "600",
     }
 
 

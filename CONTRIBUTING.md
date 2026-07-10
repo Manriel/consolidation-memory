@@ -84,10 +84,30 @@ Episodes accept ingest types: `exchange`, `fact`, `solution`, `preference`, `pro
 
 Consolidation may emit knowledge records with additional types (`procedure`, `strategy`). Store `strategy` episodes as structured JSON (`{"type": "strategy", ...}`) with any ingest `content_type` — see [docs/FAST_PATH_EPISODES.md](docs/FAST_PATH_EPISODES.md).
 
+## MCP host configuration (interactive agents)
+
+Prefer the canonical snippet from `consolidation-memory init` / `setup_service.recommended_mcp_server_config()`:
+
+- **`command`**: absolute path to the Python that has `consolidation-memory` installed (`sys.executable`), not a bare name that can drift on Windows PATH.
+- **`CONSOLIDATION_MEMORY_STATUS_LIGHTWEIGHT=1`**: status skips markdown consistency scans (and SciPy-heavy imports).
+- **`CONSOLIDATION_MEMORY_MCP_AUTO_CONSOLIDATE=0`**: do not consolidate on the interactive path.
+- **`CONSOLIDATION_MEMORY_PRELOAD_SCIPY_ON_START=1`**: load SciPy on the MCP main thread so consolidate does not hang on Windows worker-thread native imports.
+- **`CONSOLIDATION_MEMORY_DEFERRED_KNOWLEDGE_RETRY_SECONDS`**: seconds to poll for a warm record-embedding cache after a deferred-knowledge recall. Default in library is `3`; **recommended MCP env is `0`** so the first `memory_recall` returns episodes immediately with a warning — call again shortly for full knowledge.
+- **Tool budgets**: `CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS` (default 60), plus per-tool `CONSOLIDATION_MEMORY_TIMEOUT_<TOOL>` (e.g. `MEMORY_STATUS`, `MEMORY_CONSOLIDATE`). Recall uses `CONSOLIDATION_MEMORY_RECALL_TIMEOUT_SECONDS`.
+
+Agent gate smoke (stdio initialize → status → recall under budgets):
+
+```bash
+python scripts/smoke_mcp_stdio.py
+```
+
+Full MCP profile is **28 tools**; simple profile is `memory_recall`, `memory_remember`, `memory_ask`.
+
 ## Local validation
 
 ```bash
 python scripts/pre_push_check.py
+python scripts/smoke_mcp_stdio.py
 pytest tests/ -q
 ruff check src tests
 mypy src/consolidation_memory/

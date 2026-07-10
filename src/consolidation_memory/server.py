@@ -61,6 +61,10 @@ _PRELOAD_NUMERIC_BACKENDS_ON_START = os.environ.get(
     "CONSOLIDATION_MEMORY_PRELOAD_NUMERIC_BACKENDS_ON_START",
     "1",
 ).strip().lower() not in {"0", "false", "no", "off"}
+_PRELOAD_SCIPY_ON_START = os.environ.get(
+    "CONSOLIDATION_MEMORY_PRELOAD_SCIPY_ON_START",
+    "1",
+).strip().lower() not in {"0", "false", "no", "off"}
 _STDIO_SINGLETON_ENABLED = os.environ.get(
     "CONSOLIDATION_MEMORY_STDIO_SINGLETON",
     "1",
@@ -70,6 +74,36 @@ _SIMPLE_MCP_TOOL_NAMES = frozenset({
     "memory_remember",
     "memory_ask",
 })
+# Default budgets for MCP tools that go through ``_call_tool_json`` / ``_call_tool_payload``.
+# Recall/drift keep dedicated handlers; consolidate is intentionally long.
+_DEFAULT_TOOL_TIMEOUTS_SECONDS: dict[str, float] = {
+    "memory_store": 30.0,
+    "memory_store_batch": 60.0,
+    "memory_remember": 30.0,
+    "memory_search": 30.0,
+    "memory_claim_browse": 30.0,
+    "memory_claim_search": 45.0,
+    "memory_outcome_record": 30.0,
+    "memory_outcome_browse": 30.0,
+    "memory_status": 30.0,
+    "memory_forget": 30.0,
+    "memory_export": 180.0,
+    "memory_correct": 60.0,
+    "memory_compact": 120.0,
+    "memory_consolidate": 600.0,
+    "memory_consolidation_log": 30.0,
+    "memory_decay_report": 45.0,
+    "memory_protect": 30.0,
+    "memory_timeline": 45.0,
+    "memory_contradictions": 30.0,
+    "memory_browse": 45.0,
+    "memory_read_topic": 30.0,
+    "memory_hygiene_scan": 60.0,
+    "memory_hygiene_apply": 180.0,
+    "memory_policy_list": 20.0,
+    "memory_policy_grant": 20.0,
+    "memory_ask": 60.0,
+}
 
 
 def _env_float(name: str, default: float) -> float:
@@ -225,6 +259,28 @@ def _recall_timeout_seconds() -> float:
 def _recall_fallback_timeout_seconds() -> float:
     configured = _MEMORY_RECALL_FALLBACK_TIMEOUT_SECONDS
     return configured if configured > 0 else 20.0
+
+
+def _default_tool_timeout_seconds() -> float:
+    """Fallback timeout when a tool has no dedicated budget."""
+    configured = _env_float("CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS", 60.0)
+    return configured if configured > 0 else 60.0
+
+
+def _tool_timeout_seconds(name: str) -> float:
+    """Resolve bounded timeout for a named MCP tool.
+
+    Order: ``CONSOLIDATION_MEMORY_TIMEOUT_<TOOL>`` (e.g. MEMORY_STATUS),
+    then per-tool defaults, then ``CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS``.
+    """
+    env_key = f"CONSOLIDATION_MEMORY_TIMEOUT_{name.upper()}"
+    override = _env_float(env_key, 0.0)
+    if override > 0:
+        return override
+    default = _DEFAULT_TOOL_TIMEOUTS_SECONDS.get(name)
+    if default is not None and default > 0:
+        return default
+    return _default_tool_timeout_seconds()
 
 
 def _client_init_timeout_seconds() -> float:
@@ -626,18 +682,49 @@ async def _get_client_with_timeout():
         ) from exc
 
 
-def _preload_numeric_backends() -> None:
-    """Preload numpy/faiss on the main thread to avoid worker-thread import stalls."""
-    if not _PRELOAD_NUMERIC_BACKENDS_ON_START:
+def _preload_scipy_clustering() -> None:
+    """Load SciPy clustering on the main thread (Windows worker-thread DLL hangs)."""
+    if not _PRELOAD_SCIPY_ON_START:
+        return
+    if "scipy.cluster.hierarchy" in sys.modules:
         return
     started = time.monotonic()
     try:
-        import faiss  # noqa: F401
-        import numpy  # noqa: F401
+        from scipy.cluster.hierarchy import fcluster, linkage  # noqa: F401
     except Exception as exc:
-        logger.warning("Numeric backend preload failed: %s", exc)
+        logger.warning("SciPy clustering preload failed: %s", exc)
         return
-    logger.info("Preloaded numpy/faiss in %.3fs", time.monotonic() - started)
+    logger.info("Preloaded scipy clustering in %.3fs", time.monotonic() - started)
+
+
+def _ensure_scipy_for_consolidate() -> None:
+    """Guarantee SciPy is imported before consolidate runs on a worker thread."""
+    if "scipy.cluster.hierarchy" in sys.modules:
+        return
+    started = time.monotonic()
+    try:
+        from scipy.cluster.hierarchy import fcluster, linkage  # noqa: F401
+    except Exception as exc:
+        logger.warning("SciPy import before consolidate failed: %s", exc)
+        return
+    logger.info(
+        "Loaded scipy clustering on main thread before consolidate (%.3fs)",
+        time.monotonic() - started,
+    )
+
+
+def _preload_numeric_backends() -> None:
+    """Preload heavy native deps on the main thread to avoid worker-thread stalls."""
+    if _PRELOAD_NUMERIC_BACKENDS_ON_START:
+        started = time.monotonic()
+        try:
+            import faiss  # noqa: F401
+            import numpy  # noqa: F401
+        except Exception as exc:
+            logger.warning("Numeric backend preload failed: %s", exc)
+        else:
+            logger.info("Preloaded numpy/faiss in %.3fs", time.monotonic() - started)
+    _preload_scipy_clustering()
 
 
 async def _idle_shutdown_monitor() -> None:
@@ -708,12 +795,13 @@ async def _call_tool_payload(
     client = None
     if tool_requires_client(name):
         client = await _get_client_with_timeout()
+    effective_timeout = _tool_timeout_seconds(name) if timeout is None else timeout
     return await _run_blocking(
         execute_tool_call,
         name,
         arguments,
         client=client,
-        timeout=timeout,
+        timeout=effective_timeout,
     )
 
 
@@ -726,6 +814,15 @@ async def _call_tool_json(
     try:
         result = await _call_tool_payload(name, arguments, timeout=timeout)
         return json.dumps(result, default=str)
+    except (TimeoutError, asyncio.TimeoutError):
+        budget = _tool_timeout_seconds(name) if timeout is None else timeout
+        message = (
+            f"{name} timed out after {budget:g}s. "
+            f"Raise CONSOLIDATION_MEMORY_TIMEOUT_{name.upper()} or "
+            "CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS."
+        )
+        logger.error(message)
+        return json.dumps({"error": message})
     except Exception as exc:
         logger.exception("%s failed", name)
         return json.dumps({"error": str(exc)})
@@ -1192,7 +1289,11 @@ async def memory_status(
         payload["scope"] = scope
     if global_scope:
         payload["global_scope"] = True
-    return await _call_tool_json("memory_status", payload)
+    return await _call_tool_json(
+        "memory_status",
+        payload,
+        timeout=_tool_timeout_seconds("memory_status"),
+    )
 
 
 @_tracked_tool()
@@ -1233,10 +1334,24 @@ async def memory_compact() -> str:
 async def memory_consolidate() -> str:
     """Manually trigger a consolidation run."""
     try:
-        result = await _call_tool_payload("memory_consolidate", {})
+        # Import SciPy on the asyncio main thread before worker execution.
+        _ensure_scipy_for_consolidate()
+        result = await _call_tool_payload(
+            "memory_consolidate",
+            {},
+            timeout=_tool_timeout_seconds("memory_consolidate"),
+        )
         if result.get("status") == "already_running":
             result.setdefault("message", "A consolidation run is already in progress")
         return json.dumps(result, default=str)
+    except (TimeoutError, asyncio.TimeoutError):
+        budget = _tool_timeout_seconds("memory_consolidate")
+        message = (
+            f"memory_consolidate timed out after {budget:g}s. "
+            "Raise CONSOLIDATION_MEMORY_TIMEOUT_MEMORY_CONSOLIDATE."
+        )
+        logger.error(message)
+        return json.dumps({"error": message})
     except Exception as exc:
         logger.exception("memory_consolidate failed")
         return json.dumps({"error": str(exc)})

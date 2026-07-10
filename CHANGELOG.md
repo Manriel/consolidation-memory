@@ -2,11 +2,33 @@
 
 ## Unreleased
 
+## 0.20.3 - 2026-07-10
+
 ### Bug Fixes
 
+- fix(mcp): lazy-load consolidation engine so interactive recall/status does not import SciPy on Windows worker threads
+- fix(status): keep lightweight status free of knowledge_consistency/SciPy imports
+- fix(mcp): bound all MCP tool calls with per-tool timeouts (status no longer unbounded)
+- fix(mcp): preload SciPy on the main thread and ensure load before consolidate
 - fix(recall): avoid blocking warmup and false deferred warnings
 - fix(ci): align bandit gate and add pre-push collection checks
 - fix(tests): defer web_ui import so CI collects without fastapi
+
+### Features
+
+- feat: `scripts/smoke_mcp_stdio.py` agent hang gate (stdio initialize → status → recall)
+- feat: recommended MCP env documents deferred-knowledge retry budget and SciPy preload
+
+### Documentation
+
+- docs: full MCP profile is 28 tools (not 30); SECURITY supported line `0.20.x`
+- docs: CONTRIBUTING MCP host config (interpreter path, lightweight status, timeouts)
+
+## 0.20.2 - 2026-06-18
+
+### Bug Fixes
+
+- fix(ci): bandit publish gate fails only on medium+ severity
 
 ## 0.20.1 - 2026-06-18
 

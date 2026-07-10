@@ -98,12 +98,29 @@ def check_pytest_full() -> int:
     return _run([sys.executable, "-m", "pytest", "tests/", "-q"], label="pytest")
 
 
+def check_mcp_stdio_smoke() -> int:
+    """Bounded stdio smoke: initialize → status → recall (agent hang gate)."""
+    script = ROOT / "scripts" / "smoke_mcp_stdio.py"
+    if not script.is_file():
+        print("pre_push_check: skip mcp stdio smoke (script missing)")
+        return 0
+    return _run(
+        [sys.executable, str(script), "--status-timeout", "45", "--recall-timeout", "60"],
+        label="mcp stdio smoke",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--full",
         action="store_true",
         help="Run the full pytest suite after quick gates (slower).",
+    )
+    parser.add_argument(
+        "--mcp-smoke",
+        action="store_true",
+        help="Run bounded MCP stdio smoke (status + recall hang gate).",
     )
     parser.add_argument(
         "--skip-collection",
@@ -118,6 +135,8 @@ def main(argv: list[str] | None = None) -> int:
     if check_ruff() != 0:
         failures += 1
     if check_bandit() != 0:
+        failures += 1
+    if args.mcp_smoke and check_mcp_stdio_smoke() != 0:
         failures += 1
     if args.full and check_pytest_full() != 0:
         failures += 1

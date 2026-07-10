@@ -1882,7 +1882,6 @@ class MemoryClient:
             get_last_consolidation_run,
             get_recent_consolidation_runs,
         )
-        from consolidation_memory.knowledge_consistency import build_knowledge_consistency_report
 
         stats = get_stats(scope=scope_filter)
         last_run = get_last_consolidation_run()
@@ -1893,6 +1892,8 @@ class MemoryClient:
 
         knowledge_consistency: dict[str, Any]
         if use_lightweight:
+            # Keep lightweight status free of consolidation/SciPy imports so MCP
+            # worker threads do not hang on native extension load (Windows).
             knowledge_consistency = {
                 "lightweight": True,
                 "threshold": cfg.KNOWLEDGE_CONSISTENCY_THRESHOLD,
@@ -1904,6 +1905,10 @@ class MemoryClient:
                 "issues": [],
             }
         else:
+            from consolidation_memory.knowledge_consistency import (
+                build_knowledge_consistency_report,
+            )
+
             knowledge_consistency = build_knowledge_consistency_report()
         health = self._compute_health(
             last_run,

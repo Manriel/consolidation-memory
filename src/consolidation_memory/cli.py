@@ -65,25 +65,12 @@ def _toml_basic_string(value: str) -> str:
 
 def _recommended_mcp_fast_env() -> dict[str, str]:
     """Environment overrides for low-latency MCP tool calls."""
-    return {
-        "PYTHONUNBUFFERED": "1",
-        "CONSOLIDATION_MEMORY_IDLE_TIMEOUT_SECONDS": _RECOMMENDED_MCP_IDLE_TIMEOUT_SECONDS,
-        "CONSOLIDATION_MEMORY_EMBEDDING_BACKEND": "fastembed",
-        "CONSOLIDATION_MEMORY_LLM_BACKEND": "disabled",
-        "CONSOLIDATION_MEMORY_WARMUP_ON_START": "1",
-        "CONSOLIDATION_MEMORY_PRELOAD_NUMERIC_BACKENDS_ON_START": "1",
-        "CONSOLIDATION_MEMORY_STATUS_LIGHTWEIGHT": "1",
-        "CONSOLIDATION_MEMORY_MCP_AUTO_CONSOLIDATE": "0",
-        "CONSOLIDATION_MEMORY_CONSOLIDATION_AUTO_RUN": "0",
-        "CONSOLIDATION_MEMORY_WARMUP_PRIME_TOPIC_CACHE": "1",
-        "CONSOLIDATION_MEMORY_WARMUP_PRIME_RECORD_CACHE": "1",
-        "CONSOLIDATION_MEMORY_WARMUP_PRIME_CLAIM_CACHE": "0",
-        "CONSOLIDATION_MEMORY_WARMUP_AWAIT_SECONDS": "15",
-        "CONSOLIDATION_MEMORY_CLIENT_INIT_TIMEOUT_SECONDS": "20",
-        "CONSOLIDATION_MEMORY_RECALL_TIMEOUT_SECONDS": "25",
-        "CONSOLIDATION_MEMORY_RECALL_FALLBACK_TIMEOUT_SECONDS": "10",
-        "CONSOLIDATION_MEMORY_DEFERRED_KNOWLEDGE_RETRY_SECONDS": "0",
-    }
+    from consolidation_memory.setup_service import recommended_mcp_fast_env
+
+    env = dict(recommended_mcp_fast_env())
+    # CLI may override idle timeout for long-lived agent hosts.
+    env["CONSOLIDATION_MEMORY_IDLE_TIMEOUT_SECONDS"] = _RECOMMENDED_MCP_IDLE_TIMEOUT_SECONDS
+    return env
 
 
 def _recommended_mcp_server_config(project: str) -> dict[str, object]:
