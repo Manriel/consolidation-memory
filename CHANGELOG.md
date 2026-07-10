@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Other
+
+- Maintenance release.
+
 ## 0.20.3 - 2026-07-10
 
 ### Bug Fixes
