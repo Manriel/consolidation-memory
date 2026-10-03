@@ -22,8 +22,9 @@ import tempfile
 import threading
 import time
 import traceback
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
-from typing import Any, Awaitable, Callable, TypeAlias, TypeVar
+from typing import Any, Awaitable, Callable, TypeAlias, TypeVar, cast
 
 from mcp.server.fastmcp import FastMCP
 
@@ -74,7 +75,7 @@ _SIMPLE_MCP_TOOL_NAMES = frozenset({
     "memory_remember",
     "memory_ask",
 })
-# Default budgets for MCP tools that go through ``_call_tool_json`` / ``_call_tool_payload``.
+# Default budgets for MCP tools that go through ``_call_tool_result`` / ``_call_tool_payload``.
 # Recall/drift keep dedicated handlers; consolidate is intentionally long.
 _DEFAULT_TOOL_TIMEOUTS_SECONDS: dict[str, float] = {
     "memory_store": 30.0,
@@ -805,15 +806,20 @@ async def _call_tool_payload(
     )
 
 
-async def _call_tool_json(
+def _json_payload(value: Mapping[str, object]) -> dict[str, Any]:
+    """Coerce a tool result to plain JSON types (anything else goes through str)."""
+    return cast(dict[str, Any], json.loads(json.dumps(value, default=str)))
+
+
+async def _call_tool_result(
     name: str,
     arguments: dict[str, object],
     *,
     timeout: float | None = None,
-) -> str:
+) -> dict[str, Any]:
     try:
         result = await _call_tool_payload(name, arguments, timeout=timeout)
-        return json.dumps(result, default=str)
+        return _json_payload(result)
     except (TimeoutError, asyncio.TimeoutError):
         budget = _tool_timeout_seconds(name) if timeout is None else timeout
         message = (
@@ -822,10 +828,10 @@ async def _call_tool_json(
             "CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS."
         )
         logger.error(message)
-        return json.dumps({"error": message})
+        return {"error": message}
     except Exception as exc:
         logger.exception("%s failed", name)
-        return json.dumps({"error": str(exc)})
+        return {"error": str(exc)}
 
 
 def _degraded_drift_output(*, message: str) -> dict[str, object]:
@@ -887,18 +893,20 @@ async def lifespan(server: FastMCP):
 mcp = FastMCP("consolidation_memory", lifespan=lifespan)
 
 
-def _tracked_tool() -> Callable[[Callable[..., Awaitable[str]]], Callable[..., Awaitable[str]]]:
+def _tracked_tool() -> (
+    Callable[[Callable[..., Awaitable[dict[str, Any]]]], Callable[..., Awaitable[dict[str, Any]]]]
+):
     """Wrap MCP tools with lightweight activity accounting for idle shutdown."""
 
     def _decorator(
-        func: Callable[..., Awaitable[str]],
-    ) -> Callable[..., Awaitable[str]]:
+        func: Callable[..., Awaitable[dict[str, Any]]],
+    ) -> Callable[..., Awaitable[dict[str, Any]]]:
         if not _mcp_tool_allowed(func.__name__):
             return func
 
         @mcp.tool()
         @functools.wraps(func)
-        async def _wrapped(*args: object, **kwargs: object) -> str:
+        async def _wrapped(*args: object, **kwargs: object) -> dict[str, Any]:
             _begin_tool_call()
             try:
                 return await func(*args, **kwargs)
@@ -917,9 +925,9 @@ async def memory_store(
     tags: list[str] | None = None,
     surprise: float = 0.5,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Store a memory episode in the episodic buffer."""
-    return await _call_tool_json(
+    return await _call_tool_result(
         "memory_store",
         {
             "content": content,
@@ -945,7 +953,7 @@ async def memory_recall(
     entity: str | None = None,
     hypothesis_competition: bool = False,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Retrieve relevant memories by semantic similarity."""
     try:
         await _await_warmup_ready()
@@ -998,21 +1006,21 @@ async def memory_recall(
                     "CONSOLIDATION_MEMORY_RECALL_TIMEOUT_SECONDS higher."
                 )
                 logger.error(message)
-                return json.dumps({"error": message})
+                return {"error": message}
             except Exception as fallback_error:
                 message = (
                     f"memory_recall timed out after {recall_timeout:g}s and keyword fallback "
                     f"failed: {fallback_error}"
                 )
                 logger.error(message)
-                return json.dumps({"error": message})
+                return {"error": message}
 
             payload = build_recall_timeout_fallback_result(
                 keyword_result,
                 recall_timeout_seconds=recall_timeout,
                 include_knowledge=include_knowledge,
             )
-            return json.dumps(payload, default=str)
+            return _json_payload(payload)
 
         result_warnings_raw = result.get("warnings")
         result_warnings: list[str] = (
@@ -1023,10 +1031,10 @@ async def memory_recall(
         if recall_result_needs_background_warm(result_warnings):
             _schedule_deferred_cache_warm(client)
 
-        return json.dumps(result, default=str)
+        return _json_payload(result)
     except Exception as exc:
         logger.exception("memory_recall failed")
-        return json.dumps({"error": str(exc)})
+        return {"error": str(exc)}
 
 
 @_tracked_tool()
@@ -1035,9 +1043,9 @@ async def memory_remember(
     kind: str = "note",
     tags: list[str] | None = None,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Save memory using plain language (note, fix, fact, preference)."""
-    return await _call_tool_json(
+    return await _call_tool_result(
         "memory_remember",
         {
             "content": content,
@@ -1053,7 +1061,7 @@ async def memory_ask(
     query: str,
     n_results: int = 8,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Search memory with a plain-language question; returns compact results."""
     try:
         await _await_warmup_ready()
@@ -1065,23 +1073,23 @@ async def memory_ask(
             "scope": scope,
         }
         inject_recall_deadline(arguments, timeout_seconds=recall_timeout)
-        return await _call_tool_json(
+        return await _call_tool_result(
             "memory_ask",
             arguments,
             timeout=recall_timeout,
         )
     except Exception as exc:
         logger.exception("memory_ask failed")
-        return json.dumps({"error": str(exc)})
+        return {"error": str(exc)}
 
 
 @_tracked_tool()
 async def memory_store_batch(
     episodes: list[dict],
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Store multiple memory episodes in a single operation."""
-    return await _call_tool_json(
+    return await _call_tool_result(
         "memory_store_batch",
         {"episodes": episodes, "scope": scope},
     )
@@ -1096,9 +1104,9 @@ async def memory_search(
     before: str | None = None,
     limit: int = 20,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Keyword/metadata search over episodes."""
-    return await _call_tool_json(
+    return await _call_tool_result(
         "memory_search",
         {
             "query": query,
@@ -1118,9 +1126,9 @@ async def memory_claim_browse(
     as_of: str | None = None,
     limit: int = 50,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Browse claims from the claim graph."""
-    return await _call_tool_json(
+    return await _call_tool_result(
         "memory_claim_browse",
         {
             "claim_type": claim_type,
@@ -1138,9 +1146,9 @@ async def memory_claim_search(
     as_of: str | None = None,
     limit: int = 50,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Search claims by text with optional temporal snapshot filtering."""
-    return await _call_tool_json(
+    return await _call_tool_result(
         "memory_claim_search",
         {
             "query": query,
@@ -1169,9 +1177,9 @@ async def memory_outcome_record(
     provenance: dict[str, Any] | str | None = None,
     observed_at: str | None = None,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Record an action outcome observation with provenance links."""
-    return await _call_tool_json(
+    return await _call_tool_result(
         "memory_outcome_record",
         {
             "action_summary": action_summary,
@@ -1203,9 +1211,9 @@ async def memory_outcome_browse(
     as_of: str | None = None,
     limit: int = 50,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Browse recorded action outcomes with optional filters."""
-    return await _call_tool_json(
+    return await _call_tool_result(
         "memory_outcome_browse",
         {
             "outcome_type": outcome_type,
@@ -1224,7 +1232,7 @@ async def memory_outcome_browse(
 async def memory_detect_drift(
     base_ref: str | None = None,
     repo_path: str | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Detect code drift and challenge impacted claims."""
     timeout_seconds = _drift_timeout_seconds()
     try:
@@ -1233,7 +1241,7 @@ async def memory_detect_drift(
             repo_path=repo_path,
             timeout_seconds=timeout_seconds,
         )
-        return json.dumps(result, default=str)
+        return _json_payload(result)
     except (TimeoutError, asyncio.TimeoutError):
         fallback_timeout = max(5.0, min(20.0, timeout_seconds * 0.2))
         if base_ref:
@@ -1253,7 +1261,7 @@ async def memory_detect_drift(
                     f"memory_detect_drift timed out after {timeout_seconds:g}s using base_ref={base_ref!r}; "
                     "returned fallback scan without base_ref."
                 )
-                return json.dumps(payload, default=str)
+                return _json_payload(payload)
             except (TimeoutError, asyncio.TimeoutError):
                 logger.error(
                     "memory_detect_drift fallback without base_ref timed out after %.2fs",
@@ -1267,10 +1275,10 @@ async def memory_detect_drift(
             "Returned a degraded empty result instead of failing."
         )
         logger.error(message)
-        return json.dumps(_degraded_drift_output(message=message), default=str)
+        return _degraded_drift_output(message=message)
     except Exception as exc:
         logger.exception("memory_detect_drift failed")
-        return json.dumps({"error": str(exc)})
+        return {"error": str(exc)}
 
 
 @_tracked_tool()
@@ -1278,7 +1286,7 @@ async def memory_status(
     lightweight: bool | None = None,
     scope: ScopeInput = None,
     global_scope: bool = False,
-) -> str:
+) -> dict[str, Any]:
     """Show memory system statistics, including fast-path consolidation metrics."""
     payload: dict[str, object] = {}
     if lightweight is not None:
@@ -1289,7 +1297,7 @@ async def memory_status(
         payload["scope"] = scope
     if global_scope:
         payload["global_scope"] = True
-    return await _call_tool_json(
+    return await _call_tool_result(
         "memory_status",
         payload,
         timeout=_tool_timeout_seconds("memory_status"),
@@ -1300,15 +1308,15 @@ async def memory_status(
 async def memory_forget(
     episode_id: str,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Mark an episode for removal from the memory system."""
-    return await _call_tool_json("memory_forget", {"episode_id": episode_id, "scope": scope})
+    return await _call_tool_result("memory_forget", {"episode_id": episode_id, "scope": scope})
 
 
 @_tracked_tool()
-async def memory_export(scope: ScopeInput = None) -> str:
+async def memory_export(scope: ScopeInput = None) -> dict[str, Any]:
     """Export all episodes and knowledge to a JSON snapshot."""
-    return await _call_tool_json("memory_export", {"scope": scope})
+    return await _call_tool_result("memory_export", {"scope": scope})
 
 
 @_tracked_tool()
@@ -1316,22 +1324,22 @@ async def memory_correct(
     topic_filename: str,
     correction: str,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Correct a knowledge document with new information."""
-    return await _call_tool_json(
+    return await _call_tool_result(
         "memory_correct",
         {"topic_filename": topic_filename, "correction": correction, "scope": scope},
     )
 
 
 @_tracked_tool()
-async def memory_compact() -> str:
+async def memory_compact() -> dict[str, Any]:
     """Compact the FAISS index by removing tombstoned vectors."""
-    return await _call_tool_json("memory_compact", {})
+    return await _call_tool_result("memory_compact", {})
 
 
 @_tracked_tool()
-async def memory_consolidate() -> str:
+async def memory_consolidate() -> dict[str, Any]:
     """Manually trigger a consolidation run."""
     try:
         # Import SciPy on the asyncio main thread before worker execution.
@@ -1343,7 +1351,7 @@ async def memory_consolidate() -> str:
         )
         if result.get("status") == "already_running":
             result.setdefault("message", "A consolidation run is already in progress")
-        return json.dumps(result, default=str)
+        return _json_payload(result)
     except (TimeoutError, asyncio.TimeoutError):
         budget = _tool_timeout_seconds("memory_consolidate")
         message = (
@@ -1351,10 +1359,10 @@ async def memory_consolidate() -> str:
             "Raise CONSOLIDATION_MEMORY_TIMEOUT_MEMORY_CONSOLIDATE."
         )
         logger.error(message)
-        return json.dumps({"error": message})
+        return {"error": message}
     except Exception as exc:
         logger.exception("memory_consolidate failed")
-        return json.dumps({"error": str(exc)})
+        return {"error": str(exc)}
 
 
 @_tracked_tool()
@@ -1362,24 +1370,24 @@ async def memory_consolidation_log(
     last_n: int = 5,
     scope: ScopeInput = None,
     global_scope: bool = False,
-) -> str:
+) -> dict[str, Any]:
     """Show recent consolidation activity as a human-readable changelog."""
     payload: dict[str, object] = {"last_n": last_n, "scope": scope}
     if global_scope:
         payload["global_scope"] = True
-    return await _call_tool_json("memory_consolidation_log", payload)
+    return await _call_tool_result("memory_consolidation_log", payload)
 
 
 @_tracked_tool()
 async def memory_decay_report(
     scope: ScopeInput = None,
     global_scope: bool = False,
-) -> str:
+) -> dict[str, Any]:
     """Show what would be forgotten if pruning ran right now."""
     payload: dict[str, object] = {"scope": scope}
     if global_scope:
         payload["global_scope"] = True
-    return await _call_tool_json("memory_decay_report", payload)
+    return await _call_tool_result("memory_decay_report", payload)
 
 
 @_tracked_tool()
@@ -1387,18 +1395,18 @@ async def memory_protect(
     episode_id: str | None = None,
     tag: str | None = None,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Mark episodes as immune to pruning."""
-    return await _call_tool_json(
+    return await _call_tool_result(
         "memory_protect",
         {"episode_id": episode_id, "tag": tag, "scope": scope},
     )
 
 
 @_tracked_tool()
-async def memory_timeline(topic: str, scope: ScopeInput = None) -> str:
+async def memory_timeline(topic: str, scope: ScopeInput = None) -> dict[str, Any]:
     """Show how understanding of a topic has changed over time."""
-    return await _call_tool_json("memory_timeline", {"topic": topic, "scope": scope})
+    return await _call_tool_result("memory_timeline", {"topic": topic, "scope": scope})
 
 
 @_tracked_tool()
@@ -1406,33 +1414,33 @@ async def memory_contradictions(
     topic: str | None = None,
     scope: ScopeInput = None,
     global_scope: bool = False,
-) -> str:
+) -> dict[str, Any]:
     """List detected contradictions from the audit log."""
     payload: dict[str, object] = {"topic": topic, "scope": scope}
     if global_scope:
         payload["global_scope"] = True
-    return await _call_tool_json("memory_contradictions", payload)
+    return await _call_tool_result("memory_contradictions", payload)
 
 
 @_tracked_tool()
-async def memory_browse(scope: ScopeInput = None) -> str:
+async def memory_browse(scope: ScopeInput = None) -> dict[str, Any]:
     """Browse all knowledge topics with summaries and metadata."""
-    return await _call_tool_json("memory_browse", {"scope": scope})
+    return await _call_tool_result("memory_browse", {"scope": scope})
 
 
 @_tracked_tool()
 async def memory_read_topic(
     filename: str,
     scope: ScopeInput = None,
-) -> str:
+) -> dict[str, Any]:
     """Read the full markdown content of a knowledge topic."""
-    return await _call_tool_json("memory_read_topic", {"filename": filename, "scope": scope})
+    return await _call_tool_result("memory_read_topic", {"filename": filename, "scope": scope})
 
 
 @_tracked_tool()
-async def memory_hygiene_scan() -> str:
+async def memory_hygiene_scan() -> dict[str, Any]:
     """Scan the corpus for noisy episodes and orphaned active claims."""
-    return await _call_tool_json("memory_hygiene_scan", {})
+    return await _call_tool_result("memory_hygiene_scan", {})
 
 
 @_tracked_tool()
@@ -1441,7 +1449,7 @@ async def memory_hygiene_apply(
     use_recommended: bool = False,
     expire_orphans: bool = False,
     dry_run: bool = False,
-) -> str:
+) -> dict[str, Any]:
     """Apply corpus hygiene cleanup (forget episodes, optionally expire orphans)."""
     payload: dict[str, object] = {
         "use_recommended": use_recommended,
@@ -1450,13 +1458,13 @@ async def memory_hygiene_apply(
     }
     if episode_ids is not None:
         payload["episode_ids"] = episode_ids
-    return await _call_tool_json("memory_hygiene_apply", payload)
+    return await _call_tool_result("memory_hygiene_apply", payload)
 
 
 @_tracked_tool()
-async def memory_policy_list() -> str:
+async def memory_policy_list() -> dict[str, Any]:
     """List persisted access policies and ACL bindings."""
-    return await _call_tool_json("memory_policy_list", {})
+    return await _call_tool_result("memory_policy_list", {})
 
 
 @_tracked_tool()
@@ -1467,7 +1475,7 @@ async def memory_policy_grant(
     project: str | None = None,
     write_mode: str | None = None,
     read_visibility: str | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Create or update a persisted policy ACL binding."""
     payload: dict[str, object] = {
         "principal_type": principal_type,
@@ -1481,7 +1489,7 @@ async def memory_policy_grant(
         payload["write_mode"] = write_mode
     if read_visibility is not None:
         payload["read_visibility"] = read_visibility
-    return await _call_tool_json("memory_policy_grant", payload)
+    return await _call_tool_result("memory_policy_grant", payload)
 
 
 def run_server() -> None:

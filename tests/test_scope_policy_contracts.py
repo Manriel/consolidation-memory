@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
 import pytest
 
@@ -91,15 +90,11 @@ class TestScopePolicyCrossSurfaceParity:
                     return client
 
                 mp.setattr("consolidation_memory.server._get_client_with_timeout", _get_client)
-                store_output = json.loads(
-                    asyncio.run(memory_store(content="blocked write", scope=_DENY_SCOPE))
-                )
-                batch_output = json.loads(
-                    asyncio.run(
-                        memory_store_batch(
-                            episodes=[{"content": "blocked write"}],
-                            scope=_DENY_SCOPE,
-                        )
+                store_output = asyncio.run(memory_store(content="blocked write", scope=_DENY_SCOPE))
+                batch_output = asyncio.run(
+                    memory_store_batch(
+                        episodes=[{"content": "blocked write"}],
+                        scope=_DENY_SCOPE,
                     )
                 )
 
@@ -158,14 +153,10 @@ class TestScopePolicyCrossSurfaceParity:
                     return client
 
                 mp.setattr("consolidation_memory.server._get_client_with_timeout", _get_client)
-                mcp_store = json.loads(
-                    asyncio.run(memory_store(content="blocked by persisted acl"))
-                )
-                mcp_batch = json.loads(
-                    asyncio.run(
-                        memory_store_batch(
-                            episodes=[{"content": "blocked by persisted acl"}],
-                        )
+                mcp_store = asyncio.run(memory_store(content="blocked by persisted acl"))
+                mcp_batch = asyncio.run(
+                    memory_store_batch(
+                        episodes=[{"content": "blocked by persisted acl"}],
                     )
                 )
 
@@ -235,12 +226,10 @@ class TestScopePolicyCrossSurfaceParity:
                     return client
 
                 mp.setattr("consolidation_memory.server._get_client_with_timeout", _get_client)
-                mcp_result = json.loads(
-                    asyncio.run(
-                        memory_search(
-                            query="cross-surface persisted read token",
-                            scope=_NAMESPACE_SCOPE,
-                        )
+                mcp_result = asyncio.run(
+                    memory_search(
+                        query="cross-surface persisted read token",
+                        scope=_NAMESPACE_SCOPE,
                     )
                 )
             mcp_ids = {ep.get("id") for ep in mcp_result["episodes"]}
@@ -318,19 +307,13 @@ class TestScopePolicyCrossSurfaceParity:
                     return client
 
                 mp.setattr("consolidation_memory.server._get_client_with_timeout", _get_client)
-                mcp_forget = json.loads(
-                    asyncio.run(memory_forget(episode_id=episode_id, scope=_DENY_SCOPE))
-                )
-                mcp_protect = json.loads(
-                    asyncio.run(memory_protect(episode_id=episode_id, scope=_DENY_SCOPE))
-                )
-                mcp_correct = json.loads(
-                    asyncio.run(
-                        memory_correct(
-                            topic_filename=filename,
-                            correction="blocked",
-                            scope=_DENY_SCOPE,
-                        )
+                mcp_forget = asyncio.run(memory_forget(episode_id=episode_id, scope=_DENY_SCOPE))
+                mcp_protect = asyncio.run(memory_protect(episode_id=episode_id, scope=_DENY_SCOPE))
+                mcp_correct = asyncio.run(
+                    memory_correct(
+                        topic_filename=filename,
+                        correction="blocked",
+                        scope=_DENY_SCOPE,
                     )
                 )
 

@@ -6,7 +6,6 @@ import asyncio
 import concurrent.futures
 import importlib
 import inspect
-import json
 import threading
 import time
 from contextlib import contextmanager
@@ -156,7 +155,7 @@ class TestMCPDetectDriftTool:
                 memory_detect_drift(base_ref="origin/main", repo_path="C:/repo")
             )
 
-        assert json.loads(output) == expected
+        assert output == expected
         mock_detect.assert_awaited_once_with(
             base_ref="origin/main",
             repo_path="C:/repo",
@@ -173,7 +172,7 @@ class TestMCPDetectDriftTool:
         ):
             output = asyncio.run(memory_detect_drift())
 
-        data = json.loads(output)
+        data = output
         assert "error" in data
         assert "git diff failed" in data["error"]
 
@@ -201,7 +200,7 @@ class TestMCPDetectDriftTool:
         ):
             output = asyncio.run(memory_detect_drift(base_ref="origin/main"))
 
-        data = json.loads(output)
+        data = output
         assert data["checked_anchors"] == [
             {"anchor_type": "path", "anchor_value": "src/fallback.py"}
         ]
@@ -225,7 +224,7 @@ class TestMCPDetectDriftTool:
         ):
             output = asyncio.run(memory_detect_drift())
 
-        data = json.loads(output)
+        data = output
         assert data["checked_anchors"] == []
         assert data["impacted_claim_ids"] == []
         assert data["challenged_claim_ids"] == []
@@ -255,7 +254,7 @@ class TestMCPDetectDriftTool:
         ):
             output = asyncio.run(memory_detect_drift())
 
-        assert json.loads(output) == expected
+        assert output == expected
 
 
 class TestMCPStoreTools:
@@ -285,7 +284,7 @@ class TestMCPStoreTools:
                 )
             )
 
-        assert json.loads(output)["id"] == "scoped-id"
+        assert output["id"] == "scoped-id"
         mock_client.store_with_scope.assert_called_once_with(
             content="scoped write",
             content_type="exchange",
@@ -322,7 +321,7 @@ class TestMCPStoreTools:
                 )
             )
 
-        assert json.loads(output)["stored"] == 1
+        assert output["stored"] == 1
         mock_client.store_batch_with_scope.assert_called_once_with(
             episodes=[{"content": "x", "content_type": "exchange", "tags": None, "surprise": 0.5}],
             scope=scoped_payload,
@@ -391,7 +390,7 @@ class TestMCPServerLifecycle:
         with _patched_server_runtime() as (server, runtime):
             async def _enter_and_call():
                 async with server.lifespan(server.mcp):
-                    return json.loads(await memory_status())
+                    return await memory_status()
 
             with (
                 patch("consolidation_memory.server._WARMUP_ON_START", False),
@@ -709,7 +708,7 @@ class TestMCPRecallTool:
                 )
             )
 
-        data = json.loads(output)
+        data = output
         assert data["total_episodes"] == 0
         mock_client.query_recall.assert_called_once_with(
             query="python runtime",
@@ -736,7 +735,7 @@ class TestMCPRecallTool:
         ):
             output = asyncio.run(memory_recall(query="test"))
 
-        data = json.loads(output)
+        data = output
         assert "error" in data
         assert "client init failed" in data["error"]
 
@@ -755,7 +754,7 @@ class TestMCPRecallTool:
                 )
             )
 
-        data = json.loads(output)
+        data = output
         assert data["total_episodes"] == 0
         mock_client.query_recall.assert_called_once_with(
             query="python runtime",
@@ -788,7 +787,7 @@ class TestMCPRecallTool:
                 )
             )
 
-        data = json.loads(output)
+        data = output
         assert data["total_episodes"] == 0
         mock_client.query_recall.assert_called_once_with(
             query="python runtime",
@@ -816,7 +815,7 @@ class TestMCPRecallTool:
             )
         )
 
-        data = json.loads(output)
+        data = output
         assert data == {"error": "scope.policy.write_mode must be one of: allow, deny"}
 
     def test_memory_claim_search_rejects_oversized_query(self):
@@ -824,7 +823,7 @@ class TestMCPRecallTool:
 
         output = asyncio.run(memory_claim_search(query="x" * 10_001))
 
-        data = json.loads(output)
+        data = output
         assert "error" in data
         assert "Maximum is 10000 characters" in data["error"]
 
@@ -848,7 +847,7 @@ class TestMCPScopeForwarding:
         with patch("consolidation_memory.server._get_client_with_timeout", return_value=mock_client):
             output = asyncio.run(memory_forget(episode_id="ep-1", scope=scope))
 
-        assert json.loads(output)["status"] == "forgotten"
+        assert output["status"] == "forgotten"
         mock_client.forget.assert_called_once_with(episode_id="ep-1", scope=scope)
 
     def test_memory_export_signature_supports_scope(self):
@@ -869,7 +868,7 @@ class TestMCPScopeForwarding:
         with patch("consolidation_memory.server._get_client_with_timeout", return_value=mock_client):
             output = asyncio.run(memory_export(scope=scope))
 
-        assert json.loads(output)["status"] == "exported"
+        assert output["status"] == "exported"
         mock_client.export.assert_called_once_with(scope=scope)
 
     def test_memory_correct_with_scope_calls_client_method(self):
@@ -885,7 +884,7 @@ class TestMCPScopeForwarding:
                 memory_correct(topic_filename="topic.md", correction="fix", scope=scope)
             )
 
-        assert json.loads(output)["status"] == "write_denied"
+        assert output["status"] == "write_denied"
         mock_client.correct.assert_called_once_with(
             topic_filename="topic.md",
             correction="fix",
@@ -903,7 +902,7 @@ class TestMCPScopeForwarding:
         with patch("consolidation_memory.server._get_client_with_timeout", return_value=mock_client):
             output = asyncio.run(memory_protect(episode_id="ep-1", scope=scope))
 
-        assert json.loads(output)["status"] == "protected"
+        assert output["status"] == "protected"
         mock_client.protect.assert_called_once_with(episode_id="ep-1", tag=None, scope=scope)
 
     def test_memory_browse_read_topic_and_timeline_with_scope_call_client_methods(self):
@@ -921,9 +920,9 @@ class TestMCPScopeForwarding:
             read_output = asyncio.run(memory_read_topic(filename="topic.md", scope=scope))
             timeline_output = asyncio.run(memory_timeline(topic="python", scope=scope))
 
-        assert json.loads(browse_output)["total"] == 0
-        assert json.loads(read_output)["status"] == "ok"
-        assert json.loads(timeline_output)["query"] == "python"
+        assert browse_output["total"] == 0
+        assert read_output["status"] == "ok"
+        assert timeline_output["query"] == "python"
         mock_client.browse.assert_called_once_with(scope=scope)
         mock_client.read_topic.assert_called_once_with(filename="topic.md", scope=scope)
         mock_client.timeline.assert_called_once_with(topic="python", scope=scope)
@@ -944,7 +943,7 @@ class TestMCPScopeForwarding:
         with patch("consolidation_memory.server._get_client_with_timeout", return_value=mock_client):
             browse_output = asyncio.run(memory_browse(scope=flat_scope))
 
-        assert json.loads(browse_output)["total"] == 0
+        assert browse_output["total"] == 0
         mock_client.browse.assert_called_once_with(scope=flat_scope)
 
     def test_memory_recall_timeout_falls_back_to_episodes_only(self):
@@ -977,7 +976,7 @@ class TestMCPScopeForwarding:
                 )
             )
 
-        data = json.loads(output)
+        data = output
         assert data["episodes"] == [{"id": "ep-1"}]
         assert any("episodes-only fallback" in msg for msg in data.get("warnings", []))
         mock_client.query_search.assert_called_once_with(
@@ -1019,7 +1018,7 @@ class TestMCPScopeForwarding:
                 )
             )
 
-        data = json.loads(output)
+        data = output
         assert "error" in data
         assert "memory_recall timed out after" in data["error"]
         assert "keyword fallback timed out after" in data["error"]
@@ -1041,7 +1040,7 @@ class TestMCPClaimTools:
                 )
             )
 
-        assert json.loads(output)["total"] == 0
+        assert output["total"] == 0
         mock_client.query_browse_claims.assert_called_once_with(
             claim_type="fact",
             as_of=None,
@@ -1068,7 +1067,7 @@ class TestMCPClaimTools:
                 )
             )
 
-        assert json.loads(output)["total_matches"] == 0
+        assert output["total_matches"] == 0
         mock_client.query_search_claims.assert_called_once_with(
             query="python",
             claim_type=None,
@@ -1102,7 +1101,7 @@ class TestMCPOutcomeTools:
                 )
             )
 
-        assert json.loads(output)["status"] == "recorded"
+        assert output["status"] == "recorded"
         mock_client.record_outcome.assert_called_once_with(
             action_summary="Run targeted pytest",
             outcome_type="success",
@@ -1138,7 +1137,7 @@ class TestMCPOutcomeTools:
                 )
             )
 
-        assert json.loads(output)["total"] == 0
+        assert output["total"] == 0
         mock_client.query_browse_outcomes.assert_called_once_with(
             outcome_type="failure",
             action_key=None,
@@ -1162,7 +1161,7 @@ class TestMCPConsolidateTool:
         with patch("consolidation_memory.server._get_client_with_timeout", return_value=mock_client):
             output = asyncio.run(memory_consolidate())
 
-        assert json.loads(output) == {"status": "error", "message": "boom"}
+        assert output == {"status": "error", "message": "boom"}
 
     def test_memory_consolidate_already_running_message(self):
         from consolidation_memory.server import memory_consolidate
@@ -1173,7 +1172,7 @@ class TestMCPConsolidateTool:
         with patch("consolidation_memory.server._get_client_with_timeout", return_value=mock_client):
             output = asyncio.run(memory_consolidate())
 
-        assert json.loads(output) == {
+        assert output == {
             "status": "already_running",
             "message": "A consolidation run is already in progress",
         }
