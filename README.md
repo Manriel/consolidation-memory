@@ -300,6 +300,8 @@ Set `llm.backend = "disabled"` and store episodes in [fast-path shapes](docs/FAS
 | [Trust vs RAG](examples/trust-vs-rag/README.md) | Same bug twice — recall + drift challenge demo |
 | [Plugin development](docs/PLUGIN_DEVELOPMENT.md) | Hook surface and author guide |
 | [LoCoMo benchmark](docs/LOCOMO_BENCHMARK.md) | External memory comparison harness |
+| [MCP guide](docs/MCP_GUIDE.md) | Wire contract, scopes, errors, environment, recipes |
+| [Tool reference](docs/TOOLS.md) | Generated input/output schemas for every MCP tool |
 
 Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -309,7 +311,7 @@ Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 - [Issues](https://github.com/charliee1w/consolidation-memory/issues)
 - [Discussions](https://github.com/charliee1w/consolidation-memory/discussions)
-- [Releases](https://github.com/charliee1w/consolidation-memory/releases) · [Changelog](CHANGELOG.md)
+- [Releases](https://github.com/charliee1w/consolidation-memory/releases) · [Changelog](CHANGELOG.md) · [Release automation](docs/RELEASE_AUTOMATION.md)
 - [Security policy](https://github.com/charliee1w/consolidation-memory/security/policy)
 
 MIT · [Code of Conduct](CODE_OF_CONDUCT.md)

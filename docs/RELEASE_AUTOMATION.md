@@ -15,9 +15,10 @@ This repository supports automated stable releases from `main`.
 Flow:
 
 1. A push lands on `main`.
-2. `changelog-on-main.yml` refreshes the `## Unreleased` section in `CHANGELOG.md` and, when the file changed, commits and pushes it with `[skip release]`.
-   - Step 1 runs `python scripts/update_changelog.py` to rewrite `## Unreleased`.
-   - Step 2 runs `git add` / `git commit` / `git push` on the already-updated file (it does **not** re-run `--commit`, because step 1 leaves `CHANGELOG.md` dirty).
+2. `changelog-on-main.yml` refreshes generated documentation and, when files changed, commits and pushes them with `[skip release]`.
+   - Runs `python scripts/update_changelog.py` to rewrite the `## Unreleased` section in `CHANGELOG.md`, then `git add` / `git commit` / `git push` on the already-updated file (it does **not** re-run `--commit`, because the updater leaves `CHANGELOG.md` dirty).
+   - Runs `python scripts/generate_tool_reference.py` to regenerate `docs/TOOLS.md` from the published tool schemas, then commits `chore(docs): refresh generated tool reference [skip release]` when it changed.
+   - The suite's `tests/test_tool_reference_sync.py` fails when the committed `docs/TOOLS.md` is stale, and the release quality gates run that suite.
 3. `release-on-main.yml` evaluates commits since the latest tag.
 4. If eligible, it runs `scripts/release.py --bump <major|minor|patch>`.
 5. The script bumps `pyproject.toml`, promotes `## Unreleased` into a versioned entry (or falls back to git commits since the tag), commits, tags (`vX.Y.Z`), and pushes.
@@ -47,6 +48,16 @@ Refresh the unreleased section without releasing:
 python scripts/update_changelog.py --dry-run
 python scripts/update_changelog.py
 ```
+
+Refresh the generated tool reference (`docs/TOOLS.md`):
+
+```bash
+python scripts/generate_tool_reference.py
+python scripts/generate_tool_reference.py --check
+```
+
+`--check` exits non-zero when the committed file is stale — the same
+condition `tests/test_tool_reference_sync.py` asserts inside the suite.
 
 Commit locally when ready:
 
