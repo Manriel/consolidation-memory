@@ -302,6 +302,7 @@ Set `llm.backend = "disabled"` and store episodes in [fast-path shapes](docs/FAS
 | [LoCoMo benchmark](docs/LOCOMO_BENCHMARK.md) | External memory comparison harness |
 | [MCP guide](docs/MCP_GUIDE.md) | Wire contract, scopes, errors, environment, recipes |
 | [Access control](docs/ACL.md) | Scope policies, ACL bindings, principals, deny/read visibility |
+| [Graphical interfaces](docs/UI.md) | Browser UI, TUI dashboard, native desktop app |
 | [Tool reference](docs/TOOLS.md) | Generated input/output schemas for every MCP tool |
 
 Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md).
