@@ -22,6 +22,7 @@ This document describes the current architecture of `consolidation-memory` as im
 
 - CLI entrypoint: `cli.py`
 - MCP server: `server.py`
+- MCP output contracts (published `outputSchema`): `tool_contracts.py`
 - REST API: `rest.py`
 - Python API: `client.py`
 - OpenAI tool schemas/dispatch: `schemas.py`

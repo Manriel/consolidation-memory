@@ -162,6 +162,10 @@ Backend matrix: [Model support](docs/MODEL_SUPPORT.md) · Runnable wiring: [exam
 
 ## Connect your agent (MCP)
 
+Full walkthrough — result contract, scopes, errors, environment, recipes:
+**[docs/MCP_GUIDE.md](docs/MCP_GUIDE.md)** · Generated tool reference (all 29 tools):
+**[docs/TOOLS.md](docs/TOOLS.md)**.
+
 Use an **absolute Python path** — more reliable than a console script, especially on Windows:
 
 ```json
@@ -205,6 +209,15 @@ Drop-in configs: [Cursor](examples/cursor-integration/README.md) · [Continue](e
 | `memory_hygiene_scan` / `memory_hygiene_apply` | Noisy-episode scan and orphan-claim cleanup |
 | `memory_scope_list` | Discover existing scopes with usage counts (pageable) |
 | `memory_outcome_record` / `memory_outcome_browse` | Link actions to outcomes |
+
+**Result contract.** Each tool returns its payload as an object in
+`structuredContent` plus the same JSON serialized as UTF-8 text in `content`
+(no `\uXXXX` escapes). The published `outputSchema` describes that payload:
+successful results are validated against it, and both the success shape and
+the `{"error": "..."}` failure shape validate. Tool execution failures
+(timeouts, input validation, dispatch errors) surface as `isError: true`
+with actionable text rather than a soft success payload, and unknown input
+arguments are rejected instead of silently ignored.
 
 Full schemas: [`src/consolidation_memory/schemas.py`](src/consolidation_memory/schemas.py)
 
