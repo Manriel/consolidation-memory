@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -93,7 +92,7 @@ def invoke_surfaces_with_execute_tool_call(
                 return_value=True,
             ),
         ):
-            mcp_out = json.loads(asyncio.run(mcp_coro_factory()))
+            mcp_out = asyncio.run(mcp_coro_factory())
 
         app = create_app()
         with patch(
