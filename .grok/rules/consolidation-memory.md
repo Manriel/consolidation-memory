@@ -19,7 +19,7 @@ current base. Re-run sync before pushing or after long idle gaps.
 - Preserve trust invariants (temporal correctness, provenance, contradictions, drift auditability, scope isolation, surface parity).
 - One focused slice per session; run targeted `pytest` + `ruff check src tests` before done.
 - Update user-facing docs when behavior changes.
-- Read **Known architectural debt** in [Claude.md](../../Claude.md) before large refactors.
+- Read **Known architectural debt** in [CLAUDE.md](../../CLAUDE.md) before large refactors.
 
 ## Audit-aligned maintainer checks (2026-06-15)
 
