@@ -36,7 +36,7 @@ def test_package_metadata_and_module_docstrings_match_positioning():
         encoding="utf-8"
     )
 
-    assert "Trust-calibrated working memory for coding agents" in pyproject
-    assert "trust-calibrated working memory for coding agents" in package_init
-    assert 'description="Trust-calibrated working memory for coding agents"' in cli_module
-    assert 'description="Trust-calibrated working memory for coding agents"' in rest_module
+    assert "Engineering knowledge layer for agents" in pyproject
+    assert "engineering knowledge layer for agents" in package_init
+    assert 'description="Engineering knowledge layer for agents"' in cli_module
+    assert 'description="Engineering knowledge layer for agents"' in rest_module

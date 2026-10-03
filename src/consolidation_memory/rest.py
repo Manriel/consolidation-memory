@@ -410,7 +410,7 @@ def create_app(*, bind_host: str | None = None) -> FastAPI:
 
     app = FastAPI(
         title="Consolidation Memory",
-        description="Trust-calibrated working memory for coding agents",
+        description="Engineering knowledge layer for agents",
         version=__version__,
         lifespan=lifespan,
     )

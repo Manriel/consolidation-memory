@@ -1486,7 +1486,7 @@ def cmd_app(*, tray: bool = True) -> None:
 def main():
     parser = argparse.ArgumentParser(
         prog="consolidation-memory",
-        description="Trust-calibrated working memory for coding agents",
+        description="Engineering knowledge layer for agents",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(

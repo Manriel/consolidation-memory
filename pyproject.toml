@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "consolidation-memory"
 version = "0.20.3"
-description = "Trust-calibrated working memory for coding agents with provenance, drift awareness, and scoped sharing"
+description = "Engineering knowledge layer for agents with provenance, drift awareness, and scoped sharing"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

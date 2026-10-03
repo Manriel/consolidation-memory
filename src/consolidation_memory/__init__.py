@@ -1,4 +1,4 @@
-"""Consolidation Memory — trust-calibrated working memory for coding agents."""
+"""Consolidation Memory — engineering knowledge layer for agents."""
 
 from importlib.metadata import version as _pkg_version
 

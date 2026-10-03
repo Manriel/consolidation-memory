@@ -474,7 +474,7 @@ def _row_matches_scope_filter(
 
 
 class MemoryClient:
-    """Trust-calibrated working memory client.
+    """Engineering knowledge layer client.
 
     Owns the vector store, database lifecycle, and optional background
     consolidation thread.  All public methods are synchronous and thread-safe.
