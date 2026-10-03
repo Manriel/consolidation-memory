@@ -40,6 +40,35 @@ from consolidation_memory.tool_adapter import (
     recall_result_needs_background_warm,
     warm_recall_caches,
 )
+from consolidation_memory.tool_contracts import (
+    AskOutput,
+    BatchStoreOutput,
+    BrowseOutput,
+    ClaimBrowseOutput,
+    ClaimSearchOutput,
+    CompactOutput,
+    ConsolidationLogOutput,
+    ConsolidationOutput,
+    ContradictionOutput,
+    CorrectOutput,
+    DecayReportOutput,
+    DriftScanOutput,
+    ExportOutput,
+    ForgetOutput,
+    HygieneApplyOutput,
+    HygieneScanOutput,
+    OutcomeBrowseOutput,
+    OutcomeRecordOutput,
+    PolicyGrantOutput,
+    PolicyListOutput,
+    ProtectOutput,
+    RecallOutput,
+    SearchOutput,
+    StatusOutput,
+    StoreOutput,
+    TimelineOutput,
+    TopicDetailOutput,
+)
 from consolidation_memory.tool_dispatch import execute_tool_call, tool_requires_client
 
 # Configure logging to stderr (stdout is the MCP JSON-RPC channel).
@@ -809,24 +838,26 @@ async def _call_tool_payload(
     )
 
 
-def _json_payload(value: Mapping[str, object]) -> dict[str, Any]:
+def _json_payload(value: Mapping[str, object]) -> _T:  # type: ignore[type-var]
     """Coerce a tool result to plain JSON types (anything else goes through str)."""
-    return cast(dict[str, Any], json.loads(json.dumps(value, default=str)))
+    return cast(_T, json.loads(json.dumps(value, default=str)))
 
 
 def _tool_error_result(
     message: str,
     *,
     structured: Mapping[str, object] | None = None,
-) -> dict[str, Any]:
+) -> _T:  # type: ignore[type-var]
     """Report a tool execution error as isError=true with actionable text (MCP spec).
 
-    Handlers stay annotated as ``dict[str, Any]``: FastMCP passes a CallToolResult
-    through untouched and skips output validation when ``is_error`` is set.
+    Handlers stay annotated with their output contract: FastMCP passes a
+    CallToolResult through untouched and skips output validation when
+    ``is_error`` is set. The TypeVar only defers the annotation; runtime
+    validation against the contract happens for successful payloads.
     """
-    payload = _json_payload(structured if structured is not None else {"error": message})
+    payload: dict[str, Any] = _json_payload(structured if structured is not None else {"error": message})
     return cast(
-        dict[str, Any],
+        _T,
         CallToolResult(
             content=[TextContent(type="text", text=message)],
             structured_content=payload,
@@ -840,7 +871,7 @@ async def _call_tool_result(
     arguments: dict[str, object],
     *,
     timeout: float | None = None,
-) -> dict[str, Any]:
+) -> _T:  # type: ignore[type-var]
     try:
         result = await _call_tool_payload(name, arguments, timeout=timeout)
         return _json_payload(result)
@@ -922,20 +953,16 @@ ArgModelBase.model_config = ConfigDict(arbitrary_types_allowed=True, extra="forb
 mcp = MCPServer("consolidation_memory", lifespan=lifespan)
 
 
-def _tracked_tool() -> (
-    Callable[[Callable[..., Awaitable[dict[str, Any]]]], Callable[..., Awaitable[dict[str, Any]]]]
-):
+def _tracked_tool() -> Callable[[Callable[..., Awaitable[_T]]], Callable[..., Awaitable[_T]]]:
     """Wrap MCP tools with lightweight activity accounting for idle shutdown."""
 
-    def _decorator(
-        func: Callable[..., Awaitable[dict[str, Any]]],
-    ) -> Callable[..., Awaitable[dict[str, Any]]]:
+    def _decorator(func: Callable[..., Awaitable[_T]]) -> Callable[..., Awaitable[_T]]:
         if not _mcp_tool_allowed(func.__name__):
             return func
 
         @mcp.tool()
         @functools.wraps(func)
-        async def _wrapped(*args: object, **kwargs: object) -> dict[str, Any]:
+        async def _wrapped(*args: object, **kwargs: object) -> _T:
             _begin_tool_call()
             try:
                 return await func(*args, **kwargs)
@@ -969,7 +996,7 @@ async def memory_store(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> StoreOutput:
     """Store a memory episode in the episodic buffer."""
     return await _call_tool_result(
         "memory_store",
@@ -1027,7 +1054,7 @@ async def memory_recall(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> RecallOutput:
     """Retrieve relevant memories by semantic similarity."""
     try:
         await _await_warmup_ready()
@@ -1126,7 +1153,7 @@ async def memory_remember(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> StoreOutput:
     """Save memory using plain language (note, fix, fact, preference)."""
     return await _call_tool_result(
         "memory_remember",
@@ -1150,7 +1177,7 @@ async def memory_ask(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> AskOutput:
     """Search memory with a plain-language question; returns compact results."""
     try:
         await _await_warmup_ready()
@@ -1179,7 +1206,7 @@ async def memory_store_batch(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> BatchStoreOutput:
     """Store multiple memory episodes in a single operation."""
     return await _call_tool_result(
         "memory_store_batch",
@@ -1214,7 +1241,7 @@ async def memory_search(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> SearchOutput:
     """Keyword/metadata search over episodes."""
     return await _call_tool_result(
         "memory_search",
@@ -1245,7 +1272,7 @@ async def memory_claim_browse(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> ClaimBrowseOutput:
     """Browse claims from the claim graph."""
     return await _call_tool_result(
         "memory_claim_browse",
@@ -1277,7 +1304,7 @@ async def memory_claim_search(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> ClaimSearchOutput:
     """Search claims by text with optional temporal snapshot filtering."""
     return await _call_tool_result(
         "memory_claim_search",
@@ -1347,7 +1374,7 @@ async def memory_outcome_record(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> OutcomeRecordOutput:
     """Record an action outcome observation with provenance links."""
     return await _call_tool_result(
         "memory_outcome_record",
@@ -1399,7 +1426,7 @@ async def memory_outcome_browse(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> OutcomeBrowseOutput:
     """Browse recorded action outcomes with optional filters."""
     return await _call_tool_result(
         "memory_outcome_browse",
@@ -1426,7 +1453,7 @@ async def memory_detect_drift(
         str | None,
         Field(description="Optional repository path (defaults to current working directory)."),
     ] = None,
-) -> dict[str, Any]:
+) -> DriftScanOutput:
     """Detect code drift and challenge impacted claims."""
     timeout_seconds = _drift_timeout_seconds()
     try:
@@ -1489,7 +1516,7 @@ async def memory_status(
         bool,
         Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
     ] = False,
-) -> dict[str, Any]:
+) -> StatusOutput:
     """Show memory system statistics, including fast-path consolidation metrics."""
     payload: dict[str, object] = {}
     if lightweight is not None:
@@ -1514,7 +1541,7 @@ async def memory_forget(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> ForgetOutput:
     """Mark an episode for removal from the memory system."""
     return await _call_tool_result("memory_forget", {"episode_id": episode_id, "scope": scope})
 
@@ -1523,7 +1550,7 @@ async def memory_forget(
 async def memory_export(scope: Annotated[
     ScopeInput,
     Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
-] = None) -> dict[str, Any]:
+] = None) -> ExportOutput:
     """Export all episodes and knowledge to a JSON snapshot."""
     return await _call_tool_result("memory_export", {"scope": scope})
 
@@ -1542,7 +1569,7 @@ async def memory_correct(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> CorrectOutput:
     """Correct a knowledge document with new information."""
     return await _call_tool_result(
         "memory_correct",
@@ -1551,13 +1578,13 @@ async def memory_correct(
 
 
 @_tracked_tool()
-async def memory_compact() -> dict[str, Any]:
+async def memory_compact() -> CompactOutput:
     """Compact the FAISS index by removing tombstoned vectors."""
     return await _call_tool_result("memory_compact", {})
 
 
 @_tracked_tool()
-async def memory_consolidate() -> dict[str, Any]:
+async def memory_consolidate() -> ConsolidationOutput:
     """Manually trigger a consolidation run."""
     try:
         # Import SciPy on the asyncio main thread before worker execution.
@@ -1597,7 +1624,7 @@ async def memory_consolidation_log(
         bool,
         Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
     ] = False,
-) -> dict[str, Any]:
+) -> ConsolidationLogOutput:
     """Show recent consolidation activity as a human-readable changelog."""
     payload: dict[str, object] = {"last_n": last_n, "scope": scope}
     if global_scope:
@@ -1615,7 +1642,7 @@ async def memory_decay_report(
         bool,
         Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
     ] = False,
-) -> dict[str, Any]:
+) -> DecayReportOutput:
     """Show what would be forgotten if pruning ran right now."""
     payload: dict[str, object] = {"scope": scope}
     if global_scope:
@@ -1634,7 +1661,7 @@ async def memory_protect(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> ProtectOutput:
     """Mark episodes as immune to pruning."""
     return await _call_tool_result(
         "memory_protect",
@@ -1649,7 +1676,7 @@ async def memory_timeline(topic: Annotated[
 ], scope: Annotated[
     ScopeInput,
     Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
-] = None) -> dict[str, Any]:
+] = None) -> TimelineOutput:
     """Show how understanding of a topic has changed over time."""
     return await _call_tool_result("memory_timeline", {"topic": topic, "scope": scope})
 
@@ -1668,7 +1695,7 @@ async def memory_contradictions(
         bool,
         Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
     ] = False,
-) -> dict[str, Any]:
+) -> ContradictionOutput:
     """List detected contradictions from the audit log."""
     payload: dict[str, object] = {"topic": topic, "scope": scope}
     if global_scope:
@@ -1680,7 +1707,7 @@ async def memory_contradictions(
 async def memory_browse(scope: Annotated[
     ScopeInput,
     Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
-] = None) -> dict[str, Any]:
+] = None) -> BrowseOutput:
     """Browse all knowledge topics with summaries and metadata."""
     return await _call_tool_result("memory_browse", {"scope": scope})
 
@@ -1695,13 +1722,13 @@ async def memory_read_topic(
         ScopeInput,
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
-) -> dict[str, Any]:
+) -> TopicDetailOutput:
     """Read the full markdown content of a knowledge topic."""
     return await _call_tool_result("memory_read_topic", {"filename": filename, "scope": scope})
 
 
 @_tracked_tool()
-async def memory_hygiene_scan() -> dict[str, Any]:
+async def memory_hygiene_scan() -> HygieneScanOutput:
     """Scan the corpus for noisy episodes and orphaned active claims."""
     return await _call_tool_result("memory_hygiene_scan", {})
 
@@ -1724,7 +1751,7 @@ async def memory_hygiene_apply(
         bool,
         Field(description="Preview actions without mutating the corpus."),
     ] = False,
-) -> dict[str, Any]:
+) -> HygieneApplyOutput:
     """Apply corpus hygiene cleanup (forget episodes, optionally expire orphans)."""
     payload: dict[str, object] = {
         "use_recommended": use_recommended,
@@ -1737,7 +1764,7 @@ async def memory_hygiene_apply(
 
 
 @_tracked_tool()
-async def memory_policy_list() -> dict[str, Any]:
+async def memory_policy_list() -> PolicyListOutput:
     """List persisted access policies and ACL bindings."""
     return await _call_tool_result("memory_policy_list", {})
 
@@ -1765,7 +1792,7 @@ async def memory_policy_grant(
         str | None,
         Field(description="Read visibility policy for the principal."),
     ] = None,
-) -> dict[str, Any]:
+) -> PolicyGrantOutput:
     """Create or update a persisted policy ACL binding."""
     payload: dict[str, object] = {
         "principal_type": principal_type,
@@ -1780,6 +1807,43 @@ async def memory_policy_grant(
     if read_visibility is not None:
         payload["read_visibility"] = read_visibility
     return await _call_tool_result("memory_policy_grant", payload)
+
+
+_ERROR_OUTPUT_ARM: dict[str, Any] = {
+    "type": "object",
+    "title": "ToolErrorPayload",
+    "description": "Tool execution error payload published alongside isError=true results.",
+    "properties": {"error": {"type": "string", "description": "Actionable error message."}},
+    "required": ["error"],
+    "additionalProperties": True,
+}
+
+
+def _publish_output_schemas() -> None:
+    """Publish each tool's output schema as anyOf[success contract, error payload].
+
+    Success payloads are validated against the contract model itself; error
+    results skip output validation and carry ``{"error": ...}`` instead, so the
+    published schema has to accept both shapes (MCP spec: clients validate
+    structured results against outputSchema).
+    """
+    for tool in mcp._tool_manager._tools.values():
+        schema = tool.fn_metadata.output_schema
+        if schema is None or "anyOf" in schema:
+            continue
+        success = dict(schema)
+        defs = success.pop("$defs", None)
+        # Root "type" keeps pre-2026 protocol validators (which require it) happy;
+        # both anyOf arms are objects, so the conjunction stays accurate.
+        published: dict[str, Any] = {"type": "object", "anyOf": [success, _ERROR_OUTPUT_ARM]}
+        if defs is not None:
+            published["$defs"] = defs
+        # Shared dict object: mutating in place updates the tool listing too.
+        schema.clear()
+        schema.update(published)
+
+
+_publish_output_schemas()
 
 
 def run_server() -> None:

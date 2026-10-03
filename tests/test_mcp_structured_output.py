@@ -23,9 +23,40 @@ from mcp.types import Tool as MCPTool
 
 from consolidation_memory import server
 
-_NON_ASCII_PAYLOAD: dict[str, Any] = {
-    "episodes": [{"id": "ep-1", "content": "Γειά σου κόσμε — память"}],
-    "total_matches": 1,
+# A complete memory_status payload: every required contract key with exact
+# JSON types, carrying non-ASCII text in free-form fields. Passing this through
+# FastMCP proves the contract accepts real payloads and keeps Unicode intact.
+_STATUS_PAYLOAD: dict[str, Any] = {
+    "episodic_buffer": {"total": 2, "pending_consolidation": 1, "consolidated": 1, "pruned": 0},
+    "knowledge_base": {
+        "total_topics": 0,
+        "total_facts": 0,
+        "total_records": 0,
+        "records_by_type": {
+            "facts": 0,
+            "solutions": 0,
+            "preferences": 0,
+            "procedures": 0,
+            "strategies": 0,
+        },
+    },
+    "last_consolidation": None,
+    "embedding_backend": "fastembed",
+    "embedding_model": "bge-Γειά σου κόσμε",
+    "faiss_index_size": 2,
+    "faiss_tombstones": 0,
+    "db_size_mb": 0.25,
+    "version": "0.0.0-test",
+    "health": {"status": "healthy", "issues": [], "backend_reachable": True},
+    "consolidation_metrics": [],
+    "consolidation_quality": None,
+    "fast_path_hits": 0,
+    "llm_fallbacks": 0,
+    "recent_activity": [],
+    "utility_scheduler": None,
+    "knowledge_consistency": None,
+    "scaling": None,
+    "trust_profile": {"note": "Γειά σου κόσμε — память"},
 }
 
 # ASCII, non-ASCII and literal \uXXXX sequences in one stored string.
@@ -68,17 +99,17 @@ def _call_status(
 
 
 def test_structured_content_is_the_payload_object(monkeypatch: Any) -> None:
-    result = _call_status(monkeypatch, payload=_NON_ASCII_PAYLOAD)
-    assert result.structured_content == _NON_ASCII_PAYLOAD
+    result = _call_status(monkeypatch, payload=_STATUS_PAYLOAD)
+    assert result.structured_content == _STATUS_PAYLOAD
 
 
 def test_text_content_is_single_encoded_json_with_unicode(monkeypatch: Any) -> None:
-    result = _call_status(monkeypatch, payload=_NON_ASCII_PAYLOAD)
+    result = _call_status(monkeypatch, payload=_STATUS_PAYLOAD)
     text = result.content[0].text
     assert "Γειά" in text, "non-ASCII text must be returned as-is"
     assert "\\u0393" not in text, "Greek characters must not be \\uXXXX-escaped"
     assert "\\u043f" not in text, "Cyrillic characters must not be \\uXXXX-escaped"
-    assert json.loads(text) == _NON_ASCII_PAYLOAD
+    assert json.loads(text) == _STATUS_PAYLOAD
 
 
 def test_stored_content_round_trips_byte_identically() -> None:
@@ -115,12 +146,12 @@ def test_error_result_is_is_error_with_structured_payload(monkeypatch: Any) -> N
 
 def test_handler_returns_object_not_json_text(monkeypatch: Any) -> None:
     async def fake_call_tool_payload(*args: Any, **kwargs: Any) -> dict[str, object]:
-        return dict(_NON_ASCII_PAYLOAD)
+        return dict(_STATUS_PAYLOAD)
 
     monkeypatch.setattr(server, "_call_tool_payload", fake_call_tool_payload)
     result = asyncio.run(server.memory_status(lightweight=True))
     assert isinstance(result, dict)
-    assert result == _NON_ASCII_PAYLOAD
+    assert result == _STATUS_PAYLOAD
 
 
 def test_input_schemas_are_valid_json_schema() -> None:
@@ -198,18 +229,57 @@ def test_unknown_argument_is_rejected() -> None:
 
 
 def test_output_schemas_are_valid_json_schema() -> None:
+    """Published schemas are anyOf[success contract, error payload] objects."""
     for tool in _published_tools():
-        assert tool.output_schema is not None, tool.name
-        jsonschema.Draft202012Validator.check_schema(tool.output_schema)
-        assert tool.output_schema.get("type") == "object", tool.name
+        schema = tool.output_schema
+        assert schema is not None, tool.name
+        jsonschema.Draft202012Validator.check_schema(schema)
+        arms = schema.get("anyOf")
+        assert isinstance(arms, list) and len(arms) == 2, tool.name
+        assert arms[0].get("type") == "object", tool.name
+        assert arms[0].get("properties"), tool.name
+        assert arms[1].get("title") == "ToolErrorPayload", tool.name
+        assert arms[1].get("required") == ["error"], tool.name
+
+
+def _iter_object_schemas(schema: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect every object schema node reachable through properties/items/$defs."""
+    found: list[dict[str, Any]] = []
+
+    def visit(node: Any) -> None:
+        if isinstance(node, dict):
+            if node.get("type") == "object" and isinstance(node.get("properties"), dict):
+                found.append(node)
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for item in node:
+                visit(item)
+
+    visit(schema)
+    return found
+
+
+def test_output_schema_properties_all_carry_descriptions() -> None:
+    """Every published property, including nested models, documents itself."""
+    missing: list[str] = []
+    for tool in _published_tools():
+        schema = tool.output_schema or {}
+        success_arm = (schema.get("anyOf") or [{}])[0]
+        for node in _iter_object_schemas(success_arm):
+            for prop_name, prop_spec in (node.get("properties") or {}).items():
+                if not str(prop_spec.get("description") or "").strip():
+                    missing.append(f"{tool.name}.{prop_name}")
+    assert not missing, f"output properties without description: {missing}"
 
 
 def test_output_schema_describes_the_payload(monkeypatch: Any) -> None:
-    result = _call_status(monkeypatch, payload=_NON_ASCII_PAYLOAD)
+    result = _call_status(monkeypatch, payload=_STATUS_PAYLOAD)
 
     tool = next(tool for tool in _published_tools() if tool.name == "memory_status")
     assert tool.output_schema is not None
-    properties = set(tool.output_schema.get("properties") or {})
+    success_arm = tool.output_schema["anyOf"][0]
+    properties = set(success_arm.get("properties") or {})
     assert "result" not in properties, "payload must not be wrapped in a result key"
     jsonschema.validate(result.structured_content, tool.output_schema)
 
@@ -219,4 +289,4 @@ def test_output_schema_rejects_non_object_payload(monkeypatch: Any) -> None:
     tool = next(tool for tool in _published_tools() if tool.name == "memory_status")
     assert tool.output_schema is not None
     with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate(json.dumps(dict(_NON_ASCII_PAYLOAD)), tool.output_schema)
+        jsonschema.validate(json.dumps(dict(_STATUS_PAYLOAD)), tool.output_schema)
