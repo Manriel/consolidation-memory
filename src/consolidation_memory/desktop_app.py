@@ -183,7 +183,7 @@ if _PYSIDE_AVAILABLE:
             self._worker: _Worker | None = None
             self._icon = build_app_icon()
 
-            self.setWindowTitle("consolidation-memory")
+            self.setWindowTitle("consolidation-memory — engineering knowledge layer")
             self.setWindowIcon(self._icon)
             self.resize(920, 680)
             self.setStyleSheet(APP_STYLESHEET)
@@ -198,7 +198,7 @@ if _PYSIDE_AVAILABLE:
             title_block = QVBoxLayout()
             title = QLabel("consolidation-memory")
             title.setStyleSheet("font-size: 20px; font-weight: 650; color: #e8eef5;")
-            subtitle = QLabel("Remember fixes and notes. Search them later in plain language.")
+            subtitle = QLabel("Remember fixes and notes — knowledge your agents can reuse.")
             subtitle.setStyleSheet("color: #8fa3b8;")
             title_block.addWidget(title)
             title_block.addWidget(subtitle)
