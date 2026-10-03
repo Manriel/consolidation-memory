@@ -12,6 +12,8 @@ The project currently supports security fixes for the latest published minor rel
 
 ## Trust Boundaries
 
+Data-level sharing between principals (scope policies, ACL bindings, deny/read visibility) is documented in [docs/ACL.md](docs/ACL.md); it is not a substitute for transport authentication.
+
 ### MCP (stdio)
 
 The default MCP server speaks JSON-RPC over stdio. **Any process that can launch the server can read and write the full memory database** for the configured project. There is no authentication layer on stdio transport.

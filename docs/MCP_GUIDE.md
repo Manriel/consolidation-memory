@@ -259,6 +259,9 @@ Scopes decide *visibility*; policies decide *permission*:
 - A denied write returns `status: "write_denied"` in the success payload —
   it is a business outcome, not a transport error.
 
+Full reference — resolution order, principal tokens, CLI/REST/agent
+configuration, worked examples: **[ACL.md](ACL.md)**.
+
 ## Errors, timeouts and fallbacks
 
 ### Error taxonomy (MCP)
