@@ -46,6 +46,7 @@ _CLIENTLESS_TOOLS = frozenset(
         "memory_policy_grant",
         "memory_hygiene_scan",
         "memory_hygiene_apply",
+        "memory_scope_list",
     }
 )
 
@@ -823,6 +824,24 @@ def execute_tool_call(
         from consolidation_memory.policy_admin import list_policy_bindings
 
         return list_policy_bindings()
+
+    if name == "memory_scope_list":
+        from consolidation_memory.db.scope import list_scope_usage
+
+        return list_scope_usage(
+            limit=_validate_bounded_int(
+                "limit",
+                arguments.get("limit", 100),
+                minimum=1,
+                maximum=1000,
+            ),
+            offset=_validate_bounded_int(
+                "offset",
+                arguments.get("offset", 0),
+                minimum=0,
+                maximum=1_000_000,
+            ),
+        )
 
     if name == "memory_hygiene_scan":
         from consolidation_memory.corpus_hygiene import scan_corpus_hygiene

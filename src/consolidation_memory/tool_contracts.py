@@ -48,6 +48,15 @@ __all__ = [
     "ProtectOutput",
     "RecallOutput",
     "RecordsByTypeOutput",
+    "ScopeEnvelopeUsage",
+    "ScopeListAgent",
+    "ScopeListAppClient",
+    "ScopeListNamespace",
+    "ScopeListOutput",
+    "ScopeListProject",
+    "ScopeListSession",
+    "ScopeUsageCounts",
+    "ScopeUsageEntry",
     "SearchOutput",
     "StatusOutput",
     "StoreOutput",
@@ -491,3 +500,99 @@ class PolicyGrantOutput(_Output):
     principal_key: str = Field(description="Concrete principal identifier.")
     write_mode: str | None = Field(description="Granted write mode, if any.")
     read_visibility: str | None = Field(description="Granted read visibility, if any.")
+
+
+class ScopeListNamespace(_Output):
+    """Namespace identity of a discovered scope."""
+
+    slug: str = Field(description="Namespace slug, e.g. default.")
+    sharing_mode: str | None = Field(
+        description="Namespace sharing mode: private, shared, team or managed."
+    )
+    display_name: str | None = Field(description="Human-readable namespace name, when set.")
+
+
+class ScopeListAppClient(_Output):
+    """Calling application identity of a discovered scope."""
+
+    name: str = Field(description="App client name, e.g. legacy_client.")
+    app_type: str = Field(description="App client kind: mcp, python_sdk, rest, cli, ...")
+    provider: str | None = Field(description="Upstream provider identifier, when registered.")
+    external_key: str | None = Field(description="External key of the app client, when set.")
+
+
+class ScopeListAgent(_Output):
+    """Agent identity of a discovered scope, null when rows carry no agent."""
+
+    name: str | None = Field(description="Agent name, when recorded.")
+    external_key: str | None = Field(description="Stable external agent key, when recorded.")
+
+
+class ScopeListSession(_Output):
+    """Session identity of a discovered scope, null when rows carry no session."""
+
+    external_key: str | None = Field(description="Stable external session key, when recorded.")
+    session_kind: str | None = Field(
+        description="Session kind: conversation, thread, workflow or job."
+    )
+
+
+class ScopeListProject(_Output):
+    """Project or repository identity of a discovered scope."""
+
+    slug: str = Field(description="Project slug.")
+    display_name: str | None = Field(description="Human-readable project name, when set.")
+    root_uri: str | None = Field(description="Project root URI, when recorded.")
+    repo_remote: str | None = Field(description="Git remote URL, when recorded.")
+    default_branch: str | None = Field(description="Default branch, when recorded.")
+
+
+class ScopeEnvelopeUsage(_Output):
+    """Canonical scope envelope for a discovered scope.
+
+    Shape matches the scope argument accepted by other tools, so an entry can
+    be passed back as ``scope`` without transformation.
+    """
+
+    namespace: ScopeListNamespace = Field(description="Namespace identity.")
+    app_client: ScopeListAppClient = Field(description="Calling app identity.")
+    agent: ScopeListAgent | None = Field(
+        description="Agent identity, null when rows carry no agent."
+    )
+    session: ScopeListSession | None = Field(
+        description="Session identity, null when rows carry no session."
+    )
+    project: ScopeListProject = Field(description="Project identity.")
+
+
+class ScopeUsageCounts(_Output):
+    """Row counts of the scope per data table."""
+
+    episodes: int = Field(description="Episodes stored under this scope.")
+    records: int = Field(description="Knowledge records stored under this scope.")
+    topics: int = Field(description="Knowledge topics stored under this scope.")
+
+
+class ScopeUsageEntry(_Output):
+    """One discovered scope with usage statistics."""
+
+    scope: ScopeEnvelopeUsage = Field(
+        description="Canonical scope envelope, reusable as the scope argument of other tools."
+    )
+    counts: ScopeUsageCounts = Field(description="Row counts per data table.")
+    last_used_at: str | None = Field(
+        description="Most recent created_at timestamp across the scope's rows (ISO 8601)."
+    )
+
+
+class ScopeListOutput(_Output):
+    """Result of discovering existing scopes."""
+
+    scopes: list[ScopeUsageEntry] = Field(
+        description="Discovered scopes, most recently used first."
+    )
+    total: int = Field(description="Total number of discovered scopes before limiting.")
+    offset: int = Field(description="0-based offset this window starts at.")
+    message: str | None = Field(
+        description="Set when the window does not cover every scope; explains how to page."
+    )

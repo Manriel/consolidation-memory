@@ -822,3 +822,8 @@ def _register_memory_routes(app: FastAPI, execute: ExecuteFn) -> None:
         if isinstance(result, dict) and result.get("error"):
             raise HTTPException(status_code=400, detail=str(result["error"]))
         return result
+
+    @app.get("/memory/scopes")
+    async def scope_list(limit: int = 100, offset: int = 0):
+        """Discover existing scopes with usage counts and pageable windows."""
+        return await execute("memory_scope_list", {"limit": limit, "offset": offset})

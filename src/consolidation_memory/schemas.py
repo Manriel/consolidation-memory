@@ -1063,6 +1063,41 @@ MEMORY_POLICY_LIST_SCHEMA: dict[str, Any] = {
     },
 }
 
+MEMORY_SCOPE_LIST_SCHEMA: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "memory_scope_list",
+        "description": (
+            "Discover which scopes exist: lists every scope that has stored data, "
+            "with per-table usage counts and a canonical scope envelope you can "
+            "pass back as the scope argument of other tools."
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "default": 100,
+                    "description": "Maximum number of scopes to return (1-1000).",
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0,
+                    "description": (
+                        "0-based offset into the ordered scope list for page "
+                        "iteration; combine with limit."
+                    ),
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
 MEMORY_POLICY_GRANT_SCHEMA: dict[str, Any] = {
     "type": "function",
     "function": {
@@ -1232,6 +1267,7 @@ openai_tools: list[dict[str, Any]] = [
     MEMORY_DECAY_REPORT_SCHEMA,
     MEMORY_CONSOLIDATION_LOG_SCHEMA,
     MEMORY_POLICY_LIST_SCHEMA,
+    MEMORY_SCOPE_LIST_SCHEMA,
     MEMORY_POLICY_GRANT_SCHEMA,
     MEMORY_HYGIENE_SCAN_SCHEMA,
     MEMORY_HYGIENE_APPLY_SCHEMA,

@@ -68,7 +68,7 @@ Prioritized blind spots — check this before large refactors; update when fixed
 - ~~LoCoMo narrative~~: `docs/LOCOMO_BENCHMARK.md` (full run needs API key).
 
 **Maintainer reminders (not debt)**
-- Full MCP profile ships **28 tools**; simple profile exposes 3 (`memory_recall`, `memory_remember`, `memory_ask`).
+- Full MCP profile ships **29 tools**; simple profile exposes 3 (`memory_recall`, `memory_remember`, `memory_ask`).
 - `forget()` expires claims that lose all provenance; consolidated knowledge can lag code — use `memory_correct` or new episodes + consolidate.
 - Run `memory_hygiene_scan` on noisy corpora; verify with `ruff check src tests/`, `mypy src/consolidation_memory/`, `pytest tests/ -q`.
 

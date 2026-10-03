@@ -55,6 +55,7 @@ class TestSchemaStructure:
             "memory_decay_report",
             "memory_consolidation_log",
             "memory_policy_list",
+            "memory_scope_list",
             "memory_policy_grant",
             "memory_hygiene_scan",
             "memory_hygiene_apply",

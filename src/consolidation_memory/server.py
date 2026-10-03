@@ -63,6 +63,7 @@ from consolidation_memory.tool_contracts import (
     PolicyListOutput,
     ProtectOutput,
     RecallOutput,
+    ScopeListOutput,
     SearchOutput,
     StatusOutput,
     StoreOutput,
@@ -1767,6 +1768,21 @@ async def memory_hygiene_apply(
 async def memory_policy_list() -> PolicyListOutput:
     """List persisted access policies and ACL bindings."""
     return await _call_tool_result("memory_policy_list", {})
+
+
+@_tracked_tool()
+async def memory_scope_list(
+    limit: Annotated[
+        int,
+        Field(description="Maximum number of scopes to return (1-1000)."),
+    ] = 100,
+    offset: Annotated[
+        int,
+        Field(description="0-based offset into the ordered scope list for page iteration; combine with limit."),
+    ] = 0,
+) -> ScopeListOutput:
+    """Discover which scopes exist: lists every scope that has stored data, with per-table usage counts and a canonical scope envelope you can pass back as the scope argument of other tools."""
+    return await _call_tool_result("memory_scope_list", {"limit": limit, "offset": offset})
 
 
 @_tracked_tool()

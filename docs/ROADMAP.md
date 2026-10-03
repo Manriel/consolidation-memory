@@ -30,7 +30,7 @@ Prioritized gaps between engineering maturity and broad adoption. Each item has 
 
 | Priority | Blocker | Done-when |
 | --- | --- | --- |
-| P0 | **No simple agent surface** — full MCP profile (28 tools) overwhelms newcomers | ~~`memory_remember` / `memory_ask` + `CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE=simple`~~ (shipped) |
+| P0 | **No simple agent surface** — full MCP profile (29 tools) overwhelms newcomers | ~~`memory_remember` / `memory_ask` + `CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE=simple`~~ (shipped) |
 | P0 | **Live recall proof gap** — synthetic CI passes; messy corpora underperform | ~~Trending `real_world_eval --mode full` on live `universal` corpus~~ (2026-06-14, see [REAL_WORLD_METRICS.md](REAL_WORLD_METRICS.md)); CI fixture stays regression-only |
 | P1 | **Setup friction** — Python path, embeddings, hooks, scope concepts | ~~One-command `init --quick` + `ui`; in-browser setup wizard when config missing~~ (shipped) |
 | P1 | **Ops opacity** — stale consolidation / embedding health unclear to casual users | ~~Actionable health in UI + warnings; fix-it flows (consolidate, reindex, warmup)~~ (shipped) |

@@ -112,6 +112,7 @@ def test_success_payloads_validate_against_published_schemas(
     _call("memory_hygiene_scan", "success")
     _call("memory_hygiene_apply", "dry_run", dry_run=True)
     _call("memory_policy_list", "success")
+    _call("memory_scope_list", "success", limit=10)
     _call(
         "memory_policy_grant",
         "success",

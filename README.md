@@ -186,7 +186,7 @@ Use an **absolute Python path** — more reliable than a console script, especia
 `consolidation-memory init` prints the full recommended env (timeouts, warmup, lightweight status).
 Drop-in configs: [Cursor](examples/cursor-integration/README.md) · [Continue](examples/continue-dev/README.md)
 
-**Simple profile** (3 of **28** full-profile tools): add `"CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE": "simple"` to
+**Simple profile** (3 of **29** full-profile tools): add `"CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE": "simple"` to
 `env` — exposes `memory_recall`, `memory_remember`, and `memory_ask` only.
 
 ### MCP tools (representative)
@@ -203,6 +203,7 @@ Drop-in configs: [Cursor](examples/cursor-integration/README.md) · [Continue](e
 | `memory_timeline` / `memory_contradictions` | Audit lifecycle and conflicts |
 | `memory_export` / `memory_correct` | Backup and human corrections |
 | `memory_hygiene_scan` / `memory_hygiene_apply` | Noisy-episode scan and orphan-claim cleanup |
+| `memory_scope_list` | Discover existing scopes with usage counts (pageable) |
 | `memory_outcome_record` / `memory_outcome_browse` | Link actions to outcomes |
 
 Full schemas: [`src/consolidation_memory/schemas.py`](src/consolidation_memory/schemas.py)

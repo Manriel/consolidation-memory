@@ -101,7 +101,7 @@ Agent gate smoke (stdio initialize → status → recall under budgets):
 python scripts/smoke_mcp_stdio.py
 ```
 
-Full MCP profile is **28 tools**; simple profile is `memory_recall`, `memory_remember`, `memory_ask`.
+Full MCP profile is **29 tools**; simple profile is `memory_recall`, `memory_remember`, `memory_ask`.
 
 ## Local validation
 
