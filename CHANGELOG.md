@@ -2,9 +2,37 @@
 
 ## Unreleased
 
-### Other
+### Features
 
-- Maintenance release.
+- feat(scripts): generate the MCP tool reference
+- feat: add scope discovery across MCP, OpenAI and REST
+- feat(mcp): publish typed output contracts for all tools
+- feat(mcp): report tool execution errors as isError results
+
+### Bug Fixes
+
+- fix(cli): correct the policy grant principal-type help
+- fix(ci): clear ruff and mypy gates for release
+
+### Documentation
+
+- docs: sync desktop and web copy with the positioning
+- docs: extend the architecture doc with surfaces, contracts and modules
+- docs: fix post-rebuild inconsistencies in guides and meta
+- docs: align the tagline across metadata and runtime surfaces
+- docs: rebuild the README around the knowledge-layer story
+- docs: document the browser UI, TUI dashboard and desktop app
+- docs: document scope policies and ACL end to end
+- docs: brief CLAUDE.md on the typed MCP surface
+- docs: record the MCP surface wave in the roadmap
+- docs: describe the MCP result contract and add the MCP guide
+
+### Internal
+
+- test: guard tracked markdown links and anchors
+- ci: regenerate docs/TOOLS.md with the docs bot
+- chore: drop stray my_script.js
+- ci: run desktop app tests in the optional surfaces job
 
 ## 0.20.3 - 2026-07-10
 
