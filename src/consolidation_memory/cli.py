@@ -1646,7 +1646,7 @@ def main():
     p_grant.add_argument(
         "--principal-type",
         required=True,
-        help="Principal type (e.g. app_client, agent, user)",
+        help="Token type to match: any, namespace_slug, project_slug, app_client, agent_name (see docs/ACL.md)",
     )
     p_grant.add_argument(
         "--principal-key",
