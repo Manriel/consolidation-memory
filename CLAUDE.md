@@ -90,5 +90,7 @@ Prioritized blind spots — check this before large refactors; update when fixed
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/MCP_GUIDE.md](docs/MCP_GUIDE.md) — wire contract, scopes, errors, environment, recipes
 - [docs/TOOLS.md](docs/TOOLS.md) — generated input/output schemas for every tool
+- [docs/ACL.md](docs/ACL.md) — policies, principals, multi-service scope pattern
+- [docs/UI.md](docs/UI.md) — browser UI, TUI dashboard, desktop app
 - [docs/FAST_PATH_EPISODES.md](docs/FAST_PATH_EPISODES.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)

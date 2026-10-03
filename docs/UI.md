@@ -133,7 +133,7 @@ Consequences worth knowing:
 
 ## Related
 
-- [README — extras table](../README.md#quick-start)
+- [README — extras table](../README.md#install-and-try-it)
 - [MCP guide](MCP_GUIDE.md) — agent-facing surfaces
 - [Real-world metrics](REAL_WORLD_METRICS.md) — data behind the Metrics tab
 - [Roadmap](ROADMAP.md) — how the three surfaces were shipped

@@ -56,7 +56,8 @@ type checks, security scan, full novelty gate enforcement, and artifact build +
 
 - PR CI (`test.yml`) runs quick novelty checks.
 - PR CI also validates wheel/sdist buildability and runs a dedicated optional-surface
-  job with `rest`, `openai`, and `dashboard` extras installed.
+  job with the `all` + `dev` extras (covers `rest`, `openai`, `dashboard`, `desktop`
+  test suites).
 - Main-branch automation (`release-on-main.yml`) evaluates release criteria and only
   creates a new release tag/version when eligible.
 - Tag publish (`publish.yml`) requires the tagged commit to be on `origin/main`,

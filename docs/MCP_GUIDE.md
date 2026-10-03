@@ -347,7 +347,7 @@ All variables are prefixed `CONSOLIDATION_MEMORY_`.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `MCP_TOOL_PROFILE` | `full` | `full` or `simple` (3 tools) |
-| `MCP_AUTO_CONSOLIDATE` | on | Consolidate after stores when the engine is idle |
+| `MCP_AUTO_CONSOLIDATE` | off | Let the engine consolidate after stores when idle |
 | `MCP_BLOCKING_WORKERS` | 16 | Worker threads for blocking tool bodies |
 | `WARMUP_ON_START` | on | Warm caches at server startup |
 | `WARMUP_START_DELAY_SECONDS` / `WARMUP_AWAIT_SECONDS` | — | Warmup scheduling knobs |
