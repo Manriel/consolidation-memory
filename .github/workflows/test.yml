@@ -194,4 +194,5 @@ jobs:
           tests/test_temporal_belief_queries.py
           tests/test_dashboard.py
           tests/test_dashboard_data.py
+          tests/test_desktop_app.py
           -q
