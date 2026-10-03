@@ -9,10 +9,10 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def test_readme_positions_system_as_trust_calibrated_working_memory():
+def test_readme_positions_system_as_engineering_knowledge_layer():
     readme = (_repo_root() / "README.md").read_text(encoding="utf-8")
-    assert "Trust-calibrated working memory for coding agents." in readme
-    assert "claims are the reusable unit" in readme
+    assert "Engineering knowledge layer for agents." in readme
+    assert "Claims are the reusable unit" in readme
     assert "episodes are the raw evidence" in readme
     assert "trust_profile" in readme
 
