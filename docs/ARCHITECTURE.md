@@ -8,6 +8,7 @@ This document describes the current architecture of `consolidation-memory` as im
 - Trust-preserving retrieval (temporal validity, provenance, contradiction visibility, drift challenge events).
 - Single semantic contract across MCP, REST, Python, and OpenAI-compatible tools.
 - Backward compatibility for single-project usage while supporting explicit shared scopes.
+- Amortize agent research: one investigation accumulates into shared, decaying, verified knowledge instead of being re-bought per session.
 
 ## Product Stance
 
@@ -17,6 +18,7 @@ This document describes the current architecture of `consolidation-memory` as im
 - Episodes are the raw evidence behind those claims.
 - Reuse should degrade when provenance is weak, contradictions accumulate, or code drift challenges prior conclusions.
 - Shared memory is only valuable when scope and policy make reuse safe.
+- Knowledge is an engineering layer: it accumulates, gets invalidated, and gets verified — not a flat pool of embeddings.
 
 ## Runtime Surfaces
 
@@ -26,8 +28,20 @@ This document describes the current architecture of `consolidation-memory` as im
 - REST API: `rest.py`
 - Python API: `client.py`
 - OpenAI tool schemas/dispatch: `schemas.py`
+- Browser UI: `web_ui.py` + `web/` (served at `/ui/` by the REST app)
+- TUI dashboard: `dashboard.py` + `dashboard_data.py` (direct SQLite reads)
+- Desktop app: `desktop_app.py` + `desktop_backend.py` (system tray; shared dispatch)
 
 All surfaces route to `MemoryClient` and canonical query semantics in `query_service.py`.
+
+### MCP result contract
+
+`server.py` publishes one typed `outputSchema` per tool, built from
+`tool_contracts.py` and shaped as `anyOf[success, error]`: successful
+payloads are validated against the contract before leaving the process,
+execution failures surface as `isError: true` with actionable text, and
+unknown input arguments are rejected. Text and `structuredContent` carry
+the same UTF-8 JSON. Details: [MCP_GUIDE.md](MCP_GUIDE.md).
 
 ## Core Module Map
 
@@ -44,8 +58,14 @@ All surfaces route to `MemoryClient` and canonical query semantics in `query_ser
 - `claim_graph.py`: deterministic claim canonicalization.
 - `anchors.py`: anchor extraction from episode content.
 - `drift.py`: git-based drift detection and claim challenge flow.
+- `tool_dispatch.py`: canonical tool dispatch shared by MCP, REST and OpenAI surfaces.
+- `tool_adapter.py`: shared recall deadline and keyword-fallback helpers.
+- `policy_engine.py`: scope/policy resolution (principal tokens, deny-overrides, visibility ranking).
+- `tool_contracts.py`: typed MCP output contracts (published `outputSchema`).
+- `simple_api.py`: `remember` / `ask` aliases over store/recall.
 - `release_gates.py`: release gate evaluation logic.
 - `plugins.py`: hook-based extension points.
+- GUI group: `web_ui.py`, `web/`, `ui_ops.py`, `dashboard.py`, `dashboard_data.py`, `desktop_app.py`, `desktop_backend.py`.
 
 ## Data Flow
 
@@ -194,6 +214,8 @@ Scheduler state is persisted in `consolidation_scheduler` to support determinist
 Default behavior remains compatible with legacy single-project usage.
 
 When scope is provided, writes include canonical scope metadata and reads apply scope filters. Shared namespace modes can intentionally widen visibility while keeping private defaults available.
+
+Full guide with grant recipes and a multi-service pattern: [ACL.md](ACL.md).
 
 Policy precedence and conflict semantics:
 
