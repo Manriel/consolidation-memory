@@ -15,13 +15,17 @@ src/consolidation_memory/
   drift.py           git-based drift challenge flow
   consolidation/       engine, fast_path, prompting
   schemas.py         OpenAI tools + MCP dispatch
+  tool_contracts.py  typed MCP output contracts (published outputSchema)
 ```
 
 ## Important facts
 
 - Package version: `pyproject.toml`
 - Schema version: `database.py` (`CURRENT_SCHEMA_VERSION`)
-- Tool schemas: `schemas.py` (`openai_tools`, `dispatch_tool_call`)
+- Tool schemas: `schemas.py` (`openai_tools`, `dispatch_tool_call`); MCP output contracts: `tool_contracts.py` — a handler's return annotation is the published `outputSchema`, validated strictly at runtime with `extra="allow"` so new payload keys survive
+- MCP SDK: pinned `mcp[cli]>=2.3.0,<3` (`FastMCP` was renamed `MCPServer` in mcp 2.x); published `outputSchema` is `anyOf[success, error]` under a root `type` (pre-2026 protocol validators require it)
+- MCP error model: tool execution failures return `isError: true` via `_tool_error_result` (actionable text + `{"error": ...}` structured payload); unknown input arguments are rejected (`ArgModelBase` patched to `extra="forbid"`)
+- Generated docs: `docs/TOOLS.md` comes from `scripts/generate_tool_reference.py`; `tests/test_tool_reference_sync.py` fails when it drifts
 
 ## Local verification
 
@@ -31,6 +35,7 @@ python scripts/smoke_builder_base.py
 pytest tests/ -q
 ruff check src tests/
 mypy src/consolidation_memory/
+python scripts/generate_tool_reference.py --check
 ```
 
 ## Guardrails
@@ -39,6 +44,7 @@ mypy src/consolidation_memory/
 2. Preserve trust invariants (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 3. Update user-facing docs when behavior changes.
 4. Avoid hard-coded test counts or stale timeline statements in docs.
+5. Changed a tool signature or output contract? Run `scripts/generate_tool_reference.py` and commit `docs/TOOLS.md`.
 
 ## Known architectural debt (audit 2026-06-15)
 
@@ -52,7 +58,7 @@ Prioritized blind spots — check this before large refactors; update when fixed
 **P1 (enforcement / ops)** — addressed 2026-06-15
 - ~~`coding_agent_eval` CI gate~~: `quick` mode in `novelty_gates` job. `real_world_eval` remains manual (live corpus).
 - ~~`embedding_disk_cache` cross-process lock~~: `.embedding_cache_write.lock` via `process_write_lock.py`.
-- ~~`SECURITY.md` + MCP trust boundary~~: stdio trust model documented; supported line is `0.20.x`.
+- ~~`SECURITY.md` + MCP trust boundary~~: stdio trust model documented; supported line is tracked in SECURITY.md (moves with each minor).
 - ~~Hygiene surface parity~~: `memory_hygiene_scan` / `memory_hygiene_apply` on MCP, REST, OpenAI dispatch, CLI, web UI, desktop.
 - ~~`rest.py` E402~~: imports ordered above type aliases.
 - ~~`tool_adapter` recall parity~~: shared deferred-knowledge + deadline semantics across MCP/REST/OpenAI.
@@ -82,5 +88,7 @@ Prioritized blind spots — check this before large refactors; update when fixed
 
 - [README.md](README.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/MCP_GUIDE.md](docs/MCP_GUIDE.md) — wire contract, scopes, errors, environment, recipes
+- [docs/TOOLS.md](docs/TOOLS.md) — generated input/output schemas for every tool
 - [docs/FAST_PATH_EPISODES.md](docs/FAST_PATH_EPISODES.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)
