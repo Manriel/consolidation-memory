@@ -175,6 +175,42 @@ def run_smoke(
                 # Semantic timeout with keyword fallback still returns payload; only hard fail pure errors.
                 pass
             print(f"memory_recall ok in {time.monotonic() - t0:.2f}s", flush=True)
+
+            # Published input schemas must carry descriptions and forbid extra keys.
+            _send(proc, {"jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}})
+            tools_msg = _read_until(proc, 4, timeout=init_timeout)
+            tools = ((tools_msg.get("result") or {}).get("tools")) or []
+            if not tools:
+                raise RuntimeError("tools/list returned no tools")
+            for tool in tools:
+                schema = tool.get("inputSchema") or {}
+                if schema.get("additionalProperties") is not False:
+                    raise RuntimeError(f"{tool.get('name')}: inputSchema allows additional properties")
+                for prop_name, prop_spec in (schema.get("properties") or {}).items():
+                    if not prop_spec.get("description"):
+                        raise RuntimeError(f"{tool.get('name')}.{prop_name}: missing description")
+            print(f"input schemas ok ({len(tools)} tools) in {time.monotonic() - t0:.2f}s", flush=True)
+
+            # Spec: an unknown tool argument is an input validation error (isError: true),
+            # not a silently dropped key and not a protocol-level failure.
+            _send(
+                proc,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "memory_status",
+                        "arguments": {"lightweight": True, "junk_argument": 1},
+                    },
+                },
+            )
+            junk_msg = _read_until(proc, 5, timeout=status_timeout)
+            junk_result = junk_msg.get("result")
+            if not isinstance(junk_result, dict) or not junk_result.get("isError"):
+                raise RuntimeError(f"extra tool argument not rejected: {json.dumps(junk_msg)[:400]}")
+            print(f"extra argument rejected in {time.monotonic() - t0:.2f}s", flush=True)
+
             print(f"smoke_mcp_stdio PASS total={time.monotonic() - t0:.2f}s", flush=True)
         except Exception:
             print("--- stderr tail ---", flush=True)

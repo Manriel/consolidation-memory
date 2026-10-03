@@ -24,9 +24,11 @@ import time
 import traceback
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
-from typing import Any, Awaitable, Callable, TypeAlias, TypeVar, cast
+from typing import Annotated, Any, Awaitable, Callable, TypeAlias, TypeVar, cast
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
+from pydantic import ConfigDict, Field
 
 from consolidation_memory.drift_subprocess import run_detect_drift_subprocess
 from consolidation_memory.runtime import MemoryRuntime
@@ -890,6 +892,11 @@ async def lifespan(server: MCPServer):
     logger.info("Shutting down consolidation_memory MCP server.")
 
 
+# Unknown tool arguments must fail as input validation errors instead of being
+# silently dropped (pydantic's default extra="ignore"); "forbid" also publishes
+# additionalProperties: false in every input schema. Set before tools register.
+ArgModelBase.model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+
 mcp = MCPServer("consolidation_memory", lifespan=lifespan)
 
 
@@ -920,11 +927,26 @@ def _tracked_tool() -> (
 
 @_tracked_tool()
 async def memory_store(
-    content: str,
-    content_type: str = "exchange",
-    tags: list[str] | None = None,
-    surprise: float = 0.5,
-    scope: ScopeInput = None,
+    content: Annotated[
+        str,
+        Field(description="The text content to store. Include relevant context."),
+    ],
+    content_type: Annotated[
+        str,
+        Field(description="Category of the memory. 'exchange' for conversation, 'fact' for learned info, 'solution' for problem+fix (use Problem:/Fix: lines, structured JSON type=solution, or path anchors — see docs/FAST_PATH_EPISODES.md), 'preference' for user preference, 'procedure' for repeatable workflows (see docs/FAST_PATH_EPISODES.md). Post-consolidation 'strategy' records use structured JSON with any ingest content_type."),
+    ] = "exchange",
+    tags: Annotated[
+        list[str] | None,
+        Field(description="Optional topic tags for organization (e.g., ['python', 'debugging'])."),
+    ] = None,
+    surprise: Annotated[
+        float,
+        Field(description="How novel this is, 0.0 (routine) to 1.0 (very surprising)."),
+    ] = 0.5,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Store a memory episode in the episodic buffer."""
     return await _call_tool_result(
@@ -941,18 +963,48 @@ async def memory_store(
 
 @_tracked_tool()
 async def memory_recall(
-    query: str,
-    n_results: int = 10,
-    include_knowledge: bool = True,
-    content_types: list[str] | None = None,
-    tags: list[str] | None = None,
-    after: str | None = None,
-    before: str | None = None,
-    include_expired: bool = False,
-    as_of: str | None = None,
-    entity: str | None = None,
-    hypothesis_competition: bool = False,
-    scope: ScopeInput = None,
+    query: Annotated[str, Field(description="Natural language description of what to recall.")],
+    n_results: Annotated[int, Field(description="Maximum number of episode results.")] = 10,
+    include_knowledge: Annotated[
+        bool,
+        Field(description="Whether to include consolidated knowledge documents."),
+    ] = True,
+    content_types: Annotated[
+        list[str] | None,
+        Field(description="Filter to specific content types (e.g. ['solution', 'fact'])."),
+    ] = None,
+    tags: Annotated[
+        list[str] | None,
+        Field(description="Filter to episodes with at least one matching tag."),
+    ] = None,
+    after: Annotated[
+        str | None,
+        Field(description="Only episodes created after this ISO date (e.g. '2025-01-01')."),
+    ] = None,
+    before: Annotated[
+        str | None,
+        Field(description="Only episodes created before this ISO date."),
+    ] = None,
+    include_expired: Annotated[
+        bool,
+        Field(description="Include temporally expired knowledge records. Default False."),
+    ] = False,
+    as_of: Annotated[
+        str | None,
+        Field(description="ISO datetime for temporal belief queries. Returns knowledge state at that point in time, including records that have since been superseded (e.g. '2025-06-15T00:00:00+00:00')."),
+    ] = None,
+    entity: Annotated[
+        str | None,
+        Field(description="Optional file path, module, or subject token to boost entity-linked memories (e.g. 'context_assembler.py' or 'memory_status')."),
+    ] = None,
+    hypothesis_competition: Annotated[
+        bool,
+        Field(description="When true, include expired or challenged contradicting partner claims as competing hypotheses with lowered ranking."),
+    ] = False,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Retrieve relevant memories by semantic similarity."""
     try:
@@ -1039,10 +1091,19 @@ async def memory_recall(
 
 @_tracked_tool()
 async def memory_remember(
-    content: str,
-    kind: str = "note",
-    tags: list[str] | None = None,
-    scope: ScopeInput = None,
+    content: Annotated[
+        str,
+        Field(description="What to remember — include problem and fix for kind=fix."),
+    ],
+    kind: Annotated[
+        str,
+        Field(description="note=general, fix=solution, fact=fact, preference=user preference."),
+    ] = "note",
+    tags: Annotated[list[str] | None, Field(description="Optional topic tags.")] = None,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Save memory using plain language (note, fix, fact, preference)."""
     return await _call_tool_result(
@@ -1058,9 +1119,15 @@ async def memory_remember(
 
 @_tracked_tool()
 async def memory_ask(
-    query: str,
-    n_results: int = 8,
-    scope: ScopeInput = None,
+    query: Annotated[
+        str,
+        Field(description="Natural-language question about prior work or fixes."),
+    ],
+    n_results: Annotated[int, Field(description="Maximum matches per section (default 8).")] = 8,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Search memory with a plain-language question; returns compact results."""
     try:
@@ -1085,8 +1152,11 @@ async def memory_ask(
 
 @_tracked_tool()
 async def memory_store_batch(
-    episodes: list[dict],
-    scope: ScopeInput = None,
+    episodes: Annotated[list[dict], Field(description="List of episode objects to store.")],
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Store multiple memory episodes in a single operation."""
     return await _call_tool_result(
@@ -1097,13 +1167,31 @@ async def memory_store_batch(
 
 @_tracked_tool()
 async def memory_search(
-    query: str | None = None,
-    content_types: list[str] | None = None,
-    tags: list[str] | None = None,
-    after: str | None = None,
-    before: str | None = None,
-    limit: int = 20,
-    scope: ScopeInput = None,
+    query: Annotated[
+        str | None,
+        Field(description="Text substring to search for in episode content (case-insensitive)."),
+    ] = None,
+    content_types: Annotated[
+        list[str] | None,
+        Field(description="Filter to specific content types."),
+    ] = None,
+    tags: Annotated[
+        list[str] | None,
+        Field(description="Filter to episodes with at least one matching tag."),
+    ] = None,
+    after: Annotated[
+        str | None,
+        Field(description="Only episodes created after this ISO date (e.g. '2025-01-01')."),
+    ] = None,
+    before: Annotated[
+        str | None,
+        Field(description="Only episodes created before this ISO date."),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum results to return.")] = 20,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Keyword/metadata search over episodes."""
     return await _call_tool_result(
@@ -1122,10 +1210,19 @@ async def memory_search(
 
 @_tracked_tool()
 async def memory_claim_browse(
-    claim_type: str | None = None,
-    as_of: str | None = None,
-    limit: int = 50,
-    scope: ScopeInput = None,
+    claim_type: Annotated[
+        str | None,
+        Field(description="Optional claim type filter (e.g. 'fact', 'solution', 'strategy')."),
+    ] = None,
+    as_of: Annotated[
+        str | None,
+        Field(description="Optional ISO datetime for temporal claim queries. When set, returns claims valid at that point in time."),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum claims to return.")] = 50,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Browse claims from the claim graph."""
     return await _call_tool_result(
@@ -1141,11 +1238,23 @@ async def memory_claim_browse(
 
 @_tracked_tool()
 async def memory_claim_search(
-    query: str,
-    claim_type: str | None = None,
-    as_of: str | None = None,
-    limit: int = 50,
-    scope: ScopeInput = None,
+    query: Annotated[
+        str,
+        Field(description="Search text to match against claim canonical text and payload."),
+    ],
+    claim_type: Annotated[
+        str | None,
+        Field(description="Optional claim type filter (e.g. 'fact', 'solution', 'strategy')."),
+    ] = None,
+    as_of: Annotated[
+        str | None,
+        Field(description="Optional ISO datetime for temporal claim queries. When set, searches claims valid at that point in time."),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum matched claims to return.")] = 50,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Search claims by text with optional temporal snapshot filtering."""
     return await _call_tool_result(
@@ -1162,21 +1271,60 @@ async def memory_claim_search(
 
 @_tracked_tool()
 async def memory_outcome_record(
-    action_summary: str,
-    outcome_type: str,
-    source_claim_ids: list[str] | None = None,
-    source_record_ids: list[str] | None = None,
-    source_episode_ids: list[str] | None = None,
-    code_anchors: list[dict[str, str]] | None = None,
-    issue_ids: list[str] | None = None,
-    pr_ids: list[str] | None = None,
-    action_key: str | None = None,
-    summary: str | None = None,
-    details: dict[str, Any] | str | None = None,
-    confidence: float = 0.8,
-    provenance: dict[str, Any] | str | None = None,
-    observed_at: str | None = None,
-    scope: ScopeInput = None,
+    action_summary: Annotated[
+        str,
+        Field(description="Concise description of the attempted strategy or action."),
+    ],
+    outcome_type: Annotated[str, Field(description="Outcome classification for this observation.")],
+    source_claim_ids: Annotated[
+        list[str] | None,
+        Field(description="Claim IDs this outcome is linked to."),
+    ] = None,
+    source_record_ids: Annotated[
+        list[str] | None,
+        Field(description="Knowledge record IDs this outcome is linked to."),
+    ] = None,
+    source_episode_ids: Annotated[
+        list[str] | None,
+        Field(description="Episode IDs this outcome is linked to."),
+    ] = None,
+    code_anchors: Annotated[
+        list[dict[str, str]] | None,
+        Field(description="Optional code anchors associated with the outcome."),
+    ] = None,
+    issue_ids: Annotated[
+        list[str] | None,
+        Field(description="Optional issue identifiers associated with the outcome."),
+    ] = None,
+    pr_ids: Annotated[
+        list[str] | None,
+        Field(description="Optional pull request identifiers associated with the outcome."),
+    ] = None,
+    action_key: Annotated[
+        str | None,
+        Field(description="Optional stable strategy key. Auto-derived when omitted."),
+    ] = None,
+    summary: Annotated[
+        str | None,
+        Field(description="Optional short human summary of the observed outcome."),
+    ] = None,
+    details: Annotated[
+        dict[str, Any] | str | None,
+        Field(description="Optional structured details payload for this outcome."),
+    ] = None,
+    confidence: Annotated[float, Field(description="Confidence in this observation.")] = 0.8,
+    provenance: Annotated[
+        dict[str, Any] | str | None,
+        Field(description="Optional provenance metadata (agent/tool/run identifiers, etc.)."),
+    ] = None,
+    observed_at: Annotated[
+        str | None,
+        Field(description="Optional ISO datetime when the outcome was observed."),
+    ] = None,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Record an action outcome observation with provenance links."""
     return await _call_tool_result(
@@ -1203,14 +1351,32 @@ async def memory_outcome_record(
 
 @_tracked_tool()
 async def memory_outcome_browse(
-    outcome_type: str | None = None,
-    action_key: str | None = None,
-    source_claim_id: str | None = None,
-    source_record_id: str | None = None,
-    source_episode_id: str | None = None,
-    as_of: str | None = None,
-    limit: int = 50,
-    scope: ScopeInput = None,
+    outcome_type: Annotated[str | None, Field(description="Optional outcome type filter.")] = None,
+    action_key: Annotated[
+        str | None,
+        Field(description="Optional action/strategy key filter."),
+    ] = None,
+    source_claim_id: Annotated[
+        str | None,
+        Field(description="Optional claim source filter."),
+    ] = None,
+    source_record_id: Annotated[
+        str | None,
+        Field(description="Optional record source filter."),
+    ] = None,
+    source_episode_id: Annotated[
+        str | None,
+        Field(description="Optional episode source filter."),
+    ] = None,
+    as_of: Annotated[
+        str | None,
+        Field(description="Optional ISO datetime upper bound for observed outcomes."),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum outcomes to return.")] = 50,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Browse recorded action outcomes with optional filters."""
     return await _call_tool_result(
@@ -1230,8 +1396,14 @@ async def memory_outcome_browse(
 
 @_tracked_tool()
 async def memory_detect_drift(
-    base_ref: str | None = None,
-    repo_path: str | None = None,
+    base_ref: Annotated[
+        str | None,
+        Field(description="Optional git base ref for comparison (e.g. 'origin/main')."),
+    ] = None,
+    repo_path: Annotated[
+        str | None,
+        Field(description="Optional repository path (defaults to current working directory)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Detect code drift and challenge impacted claims."""
     timeout_seconds = _drift_timeout_seconds()
@@ -1283,9 +1455,18 @@ async def memory_detect_drift(
 
 @_tracked_tool()
 async def memory_status(
-    lightweight: bool | None = None,
-    scope: ScopeInput = None,
-    global_scope: bool = False,
+    lightweight: Annotated[
+        bool | None,
+        Field(description="When true, skip markdown consistency scans and return a cached snapshot when available (faster for routine checks)."),
+    ] = None,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
+    global_scope: Annotated[
+        bool,
+        Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
+    ] = False,
 ) -> dict[str, Any]:
     """Show memory system statistics, including fast-path consolidation metrics."""
     payload: dict[str, object] = {}
@@ -1306,24 +1487,39 @@ async def memory_status(
 
 @_tracked_tool()
 async def memory_forget(
-    episode_id: str,
-    scope: ScopeInput = None,
+    episode_id: Annotated[str, Field(description="The UUID of the episode to forget.")],
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Mark an episode for removal from the memory system."""
     return await _call_tool_result("memory_forget", {"episode_id": episode_id, "scope": scope})
 
 
 @_tracked_tool()
-async def memory_export(scope: ScopeInput = None) -> dict[str, Any]:
+async def memory_export(scope: Annotated[
+    ScopeInput,
+    Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+] = None) -> dict[str, Any]:
     """Export all episodes and knowledge to a JSON snapshot."""
     return await _call_tool_result("memory_export", {"scope": scope})
 
 
 @_tracked_tool()
 async def memory_correct(
-    topic_filename: str,
-    correction: str,
-    scope: ScopeInput = None,
+    topic_filename: Annotated[
+        str,
+        Field(description="The filename of the knowledge topic (e.g., 'vr_setup.md')."),
+    ],
+    correction: Annotated[
+        str,
+        Field(description="Description of what needs to be corrected and the correct information."),
+    ],
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Correct a knowledge document with new information."""
     return await _call_tool_result(
@@ -1367,9 +1563,18 @@ async def memory_consolidate() -> dict[str, Any]:
 
 @_tracked_tool()
 async def memory_consolidation_log(
-    last_n: int = 5,
-    scope: ScopeInput = None,
-    global_scope: bool = False,
+    last_n: Annotated[
+        int,
+        Field(description="Number of recent runs to show (1-20, default 5)."),
+    ] = 5,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
+    global_scope: Annotated[
+        bool,
+        Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
+    ] = False,
 ) -> dict[str, Any]:
     """Show recent consolidation activity as a human-readable changelog."""
     payload: dict[str, object] = {"last_n": last_n, "scope": scope}
@@ -1380,8 +1585,14 @@ async def memory_consolidation_log(
 
 @_tracked_tool()
 async def memory_decay_report(
-    scope: ScopeInput = None,
-    global_scope: bool = False,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
+    global_scope: Annotated[
+        bool,
+        Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
+    ] = False,
 ) -> dict[str, Any]:
     """Show what would be forgotten if pruning ran right now."""
     payload: dict[str, object] = {"scope": scope}
@@ -1392,9 +1603,15 @@ async def memory_decay_report(
 
 @_tracked_tool()
 async def memory_protect(
-    episode_id: str | None = None,
-    tag: str | None = None,
-    scope: ScopeInput = None,
+    episode_id: Annotated[
+        str | None,
+        Field(description="Protect a specific episode by its UUID."),
+    ] = None,
+    tag: Annotated[str | None, Field(description="Protect all episodes with this tag.")] = None,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Mark episodes as immune to pruning."""
     return await _call_tool_result(
@@ -1404,16 +1621,31 @@ async def memory_protect(
 
 
 @_tracked_tool()
-async def memory_timeline(topic: str, scope: ScopeInput = None) -> dict[str, Any]:
+async def memory_timeline(topic: Annotated[
+    str,
+    Field(description="Natural language topic to query (e.g., 'frontend framework preference')."),
+], scope: Annotated[
+    ScopeInput,
+    Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+] = None) -> dict[str, Any]:
     """Show how understanding of a topic has changed over time."""
     return await _call_tool_result("memory_timeline", {"topic": topic, "scope": scope})
 
 
 @_tracked_tool()
 async def memory_contradictions(
-    topic: str | None = None,
-    scope: ScopeInput = None,
-    global_scope: bool = False,
+    topic: Annotated[
+        str | None,
+        Field(description="Optional topic filename or title to filter results."),
+    ] = None,
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
+    global_scope: Annotated[
+        bool,
+        Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
+    ] = False,
 ) -> dict[str, Any]:
     """List detected contradictions from the audit log."""
     payload: dict[str, object] = {"topic": topic, "scope": scope}
@@ -1423,15 +1655,24 @@ async def memory_contradictions(
 
 
 @_tracked_tool()
-async def memory_browse(scope: ScopeInput = None) -> dict[str, Any]:
+async def memory_browse(scope: Annotated[
+    ScopeInput,
+    Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+] = None) -> dict[str, Any]:
     """Browse all knowledge topics with summaries and metadata."""
     return await _call_tool_result("memory_browse", {"scope": scope})
 
 
 @_tracked_tool()
 async def memory_read_topic(
-    filename: str,
-    scope: ScopeInput = None,
+    filename: Annotated[
+        str,
+        Field(description="The filename of the knowledge topic (e.g., 'python_setup.md')."),
+    ],
+    scope: Annotated[
+        ScopeInput,
+        Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
+    ] = None,
 ) -> dict[str, Any]:
     """Read the full markdown content of a knowledge topic."""
     return await _call_tool_result("memory_read_topic", {"filename": filename, "scope": scope})
@@ -1445,10 +1686,22 @@ async def memory_hygiene_scan() -> dict[str, Any]:
 
 @_tracked_tool()
 async def memory_hygiene_apply(
-    episode_ids: list[str] | None = None,
-    use_recommended: bool = False,
-    expire_orphans: bool = False,
-    dry_run: bool = False,
+    episode_ids: Annotated[
+        list[str] | None,
+        Field(description="Explicit episode UUIDs to forget."),
+    ] = None,
+    use_recommended: Annotated[
+        bool,
+        Field(description="Forget all episodes flagged by the latest hygiene scan (temp/test, exchange, noise journal)."),
+    ] = False,
+    expire_orphans: Annotated[
+        bool,
+        Field(description="Expire active claims that lost all provenance."),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        Field(description="Preview actions without mutating the corpus."),
+    ] = False,
 ) -> dict[str, Any]:
     """Apply corpus hygiene cleanup (forget episodes, optionally expire orphans)."""
     payload: dict[str, object] = {
@@ -1469,12 +1722,27 @@ async def memory_policy_list() -> dict[str, Any]:
 
 @_tracked_tool()
 async def memory_policy_grant(
-    principal_type: str,
-    principal_key: str,
-    namespace: str | None = None,
-    project: str | None = None,
-    write_mode: str | None = None,
-    read_visibility: str | None = None,
+    principal_type: Annotated[
+        str,
+        Field(description="Principal type (e.g. app_client, agent_name)."),
+    ],
+    principal_key: Annotated[
+        str,
+        Field(description="Principal key (e.g. python_sdk:legacy_client)."),
+    ],
+    namespace: Annotated[
+        str | None,
+        Field(description="Namespace slug selector (wildcard when omitted)."),
+    ] = None,
+    project: Annotated[
+        str | None,
+        Field(description="Project slug selector (wildcard when omitted)."),
+    ] = None,
+    write_mode: Annotated[str | None, Field(description="Write policy for the principal.")] = None,
+    read_visibility: Annotated[
+        str | None,
+        Field(description="Read visibility policy for the principal."),
+    ] = None,
 ) -> dict[str, Any]:
     """Create or update a persisted policy ACL binding."""
     payload: dict[str, object] = {

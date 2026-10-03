@@ -148,6 +148,52 @@ def test_input_schemas_match_handler_signatures() -> None:
         )
 
 
+def _openai_input_descriptions() -> dict[str, dict[str, str]]:
+    from consolidation_memory.schemas import openai_tools
+
+    out: dict[str, dict[str, str]] = {}
+    for tool in openai_tools:
+        fn = tool.get("function", tool)
+        props = fn.get("parameters", {}).get("properties", {})
+        out[fn["name"]] = {
+            name: spec["description"]
+            for name, spec in props.items()
+            if spec.get("description")
+        }
+    return out
+
+
+def test_every_input_property_has_a_description() -> None:
+    missing = []
+    for tool in _published_tools():
+        for name, spec in ((tool.input_schema or {}).get("properties") or {}).items():
+            if not str(spec.get("description") or "").strip():
+                missing.append(f"{tool.name}.{name}")
+    assert not missing, f"input properties without description: {missing}"
+
+
+def test_input_descriptions_match_the_openai_surface() -> None:
+    """Both surfaces publish the same wording for every shared parameter."""
+    expected = _openai_input_descriptions()
+    for tool in _published_tools():
+        props = (tool.input_schema or {}).get("properties") or {}
+        assert set(props) == set(expected[tool.name]), tool.name
+        for name, spec in props.items():
+            assert spec.get("description") == expected[tool.name][name], f"{tool.name}.{name}"
+
+
+def test_input_schemas_forbid_additional_properties() -> None:
+    for tool in _published_tools():
+        assert (tool.input_schema or {}).get("additionalProperties") is False, tool.name
+
+
+def test_unknown_argument_is_rejected() -> None:
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    with pytest.raises(ToolError, match="Extra inputs are not permitted"):
+        asyncio.run(server.mcp.call_tool("memory_status", {"lightweight": True, "junk": 1}))
+
+
 def test_output_schemas_are_valid_json_schema() -> None:
     for tool in _published_tools():
         assert tool.output_schema is not None, tool.name
