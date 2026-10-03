@@ -1,13 +1,12 @@
 """Regression tests for MCP tool result encoding (issue #5).
 
-Tool handlers must hand FastMCP a JSON-serializable object. Returning JSON text
-makes FastMCP wrap the payload as ``{"result": "<json text>"}`` in
-``structuredContent``, and ``json.dumps`` defaults to ``ensure_ascii=True``, so
-non-ASCII text arrives as ``\\uXXXX`` escapes that the client passes to the model
-verbatim.
+Tool handlers must hand MCPServer a JSON-serializable object. Returning JSON text
+makes the SDK wrap the payload as ``{"result": "<json text>"}`` in
+``structured_content``, and the default serializer can emit ``\\uXXXX`` escapes
+that the client passes to the model verbatim.
 
-The same contract has to show up in the published schemas: ``inputSchema`` must
-describe the handler parameters, and ``outputSchema`` must describe the payload
+The same contract has to show up in the published schemas: ``input_schema`` must
+describe the handler parameters, and ``output_schema`` must describe the payload
 the handler actually returns.
 """
 
@@ -51,7 +50,7 @@ def _call_status(
     payload: dict[str, Any] | None = None,
     error: BaseException | None = None,
 ) -> Any:
-    """Run ``memory_status`` through FastMCP with a canned dispatch result."""
+    """Run ``memory_status`` through MCPServer with a canned dispatch result."""
 
     if error is not None:
 
@@ -70,16 +69,12 @@ def _call_status(
 
 def test_structured_content_is_the_payload_object(monkeypatch: Any) -> None:
     result = _call_status(monkeypatch, payload=_NON_ASCII_PAYLOAD)
-    assert isinstance(result, tuple), "expected (content, structured_content) from FastMCP"
-    _content, structured = result
-    assert structured == _NON_ASCII_PAYLOAD
+    assert result.structured_content == _NON_ASCII_PAYLOAD
 
 
 def test_text_content_is_single_encoded_json_with_unicode(monkeypatch: Any) -> None:
     result = _call_status(monkeypatch, payload=_NON_ASCII_PAYLOAD)
-    assert isinstance(result, tuple)
-    content, _structured = result
-    text = content[0].text
+    text = result.content[0].text
     assert "Γειά" in text, "non-ASCII text must be returned as-is"
     assert "\\u0393" not in text, "Greek characters must not be \\uXXXX-escaped"
     assert "\\u043f" not in text, "Cyrillic characters must not be \\uXXXX-escaped"
@@ -96,12 +91,11 @@ def test_stored_content_round_trips_byte_identically() -> None:
     result = asyncio.run(
         server.mcp.call_tool("memory_search", {"query": "quick brown fox", "limit": 5})
     )
-    assert isinstance(result, tuple)
-    content, structured = result
+    structured = result.structured_content
 
     assert structured.get("episodes"), "search must return the stored episode"
     from_structured = structured["episodes"][0]["content"]
-    from_text = json.loads(content[0].text)["episodes"][0]["content"]
+    from_text = json.loads(result.content[0].text)["episodes"][0]["content"]
 
     for returned in (from_structured, from_text):
         assert returned == _BYTE_IDENTITY_CONTENT
@@ -110,8 +104,7 @@ def test_stored_content_round_trips_byte_identically() -> None:
 
 def test_error_result_is_a_structured_object(monkeypatch: Any) -> None:
     result = _call_status(monkeypatch, error=TimeoutError("boom"))
-    assert isinstance(result, tuple)
-    _content, structured = result
+    structured = result.structured_content
     assert isinstance(structured, dict)
     assert isinstance(structured.get("error"), str)
     assert "timed out" in structured["error"]
@@ -129,21 +122,21 @@ def test_handler_returns_object_not_json_text(monkeypatch: Any) -> None:
 
 def test_input_schemas_are_valid_json_schema() -> None:
     for tool in _published_tools():
-        assert tool.inputSchema is not None, tool.name
-        jsonschema.Draft202012Validator.check_schema(tool.inputSchema)
-        assert tool.inputSchema.get("type") == "object", tool.name
+        assert tool.input_schema is not None, tool.name
+        jsonschema.Draft202012Validator.check_schema(tool.input_schema)
+        assert tool.input_schema.get("type") == "object", tool.name
 
 
 def test_input_schemas_match_handler_signatures() -> None:
     for tool in _published_tools():
         signature = _handler_for(tool)
         expected = set(signature.parameters)
-        properties = set((tool.inputSchema or {}).get("properties") or {})
+        properties = set((tool.input_schema or {}).get("properties") or {})
         assert properties == expected, (
-            f"{tool.name}: inputSchema properties {sorted(properties)} "
+            f"{tool.name}: input_schema properties {sorted(properties)} "
             f"!= handler parameters {sorted(expected)}"
         )
-        required = set((tool.inputSchema or {}).get("required") or [])
+        required = set((tool.input_schema or {}).get("required") or [])
         expected_required = {
             name
             for name, parameter in signature.parameters.items()
@@ -157,26 +150,24 @@ def test_input_schemas_match_handler_signatures() -> None:
 
 def test_output_schemas_are_valid_json_schema() -> None:
     for tool in _published_tools():
-        assert tool.outputSchema is not None, tool.name
-        jsonschema.Draft202012Validator.check_schema(tool.outputSchema)
-        assert tool.outputSchema.get("type") == "object", tool.name
+        assert tool.output_schema is not None, tool.name
+        jsonschema.Draft202012Validator.check_schema(tool.output_schema)
+        assert tool.output_schema.get("type") == "object", tool.name
 
 
 def test_output_schema_describes_the_payload(monkeypatch: Any) -> None:
     result = _call_status(monkeypatch, payload=_NON_ASCII_PAYLOAD)
-    assert isinstance(result, tuple)
-    _content, structured = result
 
     tool = next(tool for tool in _published_tools() if tool.name == "memory_status")
-    assert tool.outputSchema is not None
-    properties = set(tool.outputSchema.get("properties") or {})
+    assert tool.output_schema is not None
+    properties = set(tool.output_schema.get("properties") or {})
     assert "result" not in properties, "payload must not be wrapped in a result key"
-    jsonschema.validate(structured, tool.outputSchema)
+    jsonschema.validate(result.structured_content, tool.output_schema)
 
 
 def test_output_schema_rejects_non_object_payload(monkeypatch: Any) -> None:
     """A str payload is not what the schema promises."""
     tool = next(tool for tool in _published_tools() if tool.name == "memory_status")
-    assert tool.outputSchema is not None
+    assert tool.output_schema is not None
     with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate(json.dumps(dict(_NON_ASCII_PAYLOAD)), tool.outputSchema)
+        jsonschema.validate(json.dumps(dict(_NON_ASCII_PAYLOAD)), tool.output_schema)

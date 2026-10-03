@@ -26,7 +26,7 @@ from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable, TypeAlias, TypeVar, cast
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from consolidation_memory.drift_subprocess import run_detect_drift_subprocess
 from consolidation_memory.runtime import MemoryRuntime
@@ -845,7 +845,7 @@ def _degraded_drift_output(*, message: str) -> dict[str, object]:
 
 
 @asynccontextmanager
-async def lifespan(server: FastMCP):
+async def lifespan(server: MCPServer):
     """Start and stop the runtime-owned MCP server resources."""
     del server
     global _warmup_task, _idle_task, _runtime_started, _startup_error
@@ -890,7 +890,7 @@ async def lifespan(server: FastMCP):
     logger.info("Shutting down consolidation_memory MCP server.")
 
 
-mcp = FastMCP("consolidation_memory", lifespan=lifespan)
+mcp = MCPServer("consolidation_memory", lifespan=lifespan)
 
 
 def _tracked_tool() -> (

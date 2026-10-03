@@ -35,7 +35,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "mcp[cli]>=1.26.0",
+    "mcp[cli]>=2.3.0,<3",
     "httpx>=0.28.0",
     "faiss-cpu>=1.9.0",
     "scipy>=1.14.0",
