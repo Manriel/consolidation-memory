@@ -13,6 +13,8 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.helpers import as_payload
+
 
 @contextmanager
 def _patched_server_runtime():
@@ -172,7 +174,7 @@ class TestMCPDetectDriftTool:
         ):
             output = asyncio.run(memory_detect_drift())
 
-        data = output
+        data = as_payload(output)
         assert "error" in data
         assert "git diff failed" in data["error"]
 
@@ -200,7 +202,7 @@ class TestMCPDetectDriftTool:
         ):
             output = asyncio.run(memory_detect_drift(base_ref="origin/main"))
 
-        data = output
+        data = as_payload(output)
         assert data["checked_anchors"] == [
             {"anchor_type": "path", "anchor_value": "src/fallback.py"}
         ]
@@ -224,7 +226,7 @@ class TestMCPDetectDriftTool:
         ):
             output = asyncio.run(memory_detect_drift())
 
-        data = output
+        data = as_payload(output)
         assert data["checked_anchors"] == []
         assert data["impacted_claim_ids"] == []
         assert data["challenged_claim_ids"] == []
@@ -396,7 +398,7 @@ class TestMCPServerLifecycle:
                 patch("consolidation_memory.server._WARMUP_ON_START", False),
                 patch.object(runtime, "startup", side_effect=RuntimeError("schema boom")),
             ):
-                result = asyncio.run(_enter_and_call())
+                result = as_payload(asyncio.run(_enter_and_call()))
 
         assert "error" in result
         assert "MCP runtime startup failed" in result["error"]
@@ -708,7 +710,7 @@ class TestMCPRecallTool:
                 )
             )
 
-        data = output
+        data = as_payload(output)
         assert data["total_episodes"] == 0
         mock_client.query_recall.assert_called_once_with(
             query="python runtime",
@@ -735,7 +737,7 @@ class TestMCPRecallTool:
         ):
             output = asyncio.run(memory_recall(query="test"))
 
-        data = output
+        data = as_payload(output)
         assert "error" in data
         assert "client init failed" in data["error"]
 
@@ -754,7 +756,7 @@ class TestMCPRecallTool:
                 )
             )
 
-        data = output
+        data = as_payload(output)
         assert data["total_episodes"] == 0
         mock_client.query_recall.assert_called_once_with(
             query="python runtime",
@@ -787,7 +789,7 @@ class TestMCPRecallTool:
                 )
             )
 
-        data = output
+        data = as_payload(output)
         assert data["total_episodes"] == 0
         mock_client.query_recall.assert_called_once_with(
             query="python runtime",
@@ -815,7 +817,7 @@ class TestMCPRecallTool:
             )
         )
 
-        data = output
+        data = as_payload(output)
         assert data == {"error": "scope.policy.write_mode must be one of: allow, deny"}
 
     def test_memory_claim_search_rejects_oversized_query(self):
@@ -823,7 +825,7 @@ class TestMCPRecallTool:
 
         output = asyncio.run(memory_claim_search(query="x" * 10_001))
 
-        data = output
+        data = as_payload(output)
         assert "error" in data
         assert "Maximum is 10000 characters" in data["error"]
 
@@ -976,7 +978,7 @@ class TestMCPScopeForwarding:
                 )
             )
 
-        data = output
+        data = as_payload(output)
         assert data["episodes"] == [{"id": "ep-1"}]
         assert any("episodes-only fallback" in msg for msg in data.get("warnings", []))
         mock_client.query_search.assert_called_once_with(
@@ -1018,7 +1020,7 @@ class TestMCPScopeForwarding:
                 )
             )
 
-        data = output
+        data = as_payload(output)
         assert "error" in data
         assert "memory_recall timed out after" in data["error"]
         assert "keyword fallback timed out after" in data["error"]

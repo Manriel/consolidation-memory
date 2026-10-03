@@ -28,6 +28,7 @@ from typing import Annotated, Any, Awaitable, Callable, TypeAlias, TypeVar, cast
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
+from mcp.types import CallToolResult, TextContent
 from pydantic import ConfigDict, Field
 
 from consolidation_memory.drift_subprocess import run_detect_drift_subprocess
@@ -813,6 +814,27 @@ def _json_payload(value: Mapping[str, object]) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(json.dumps(value, default=str)))
 
 
+def _tool_error_result(
+    message: str,
+    *,
+    structured: Mapping[str, object] | None = None,
+) -> dict[str, Any]:
+    """Report a tool execution error as isError=true with actionable text (MCP spec).
+
+    Handlers stay annotated as ``dict[str, Any]``: FastMCP passes a CallToolResult
+    through untouched and skips output validation when ``is_error`` is set.
+    """
+    payload = _json_payload(structured if structured is not None else {"error": message})
+    return cast(
+        dict[str, Any],
+        CallToolResult(
+            content=[TextContent(type="text", text=message)],
+            structured_content=payload,
+            is_error=True,
+        ),
+    )
+
+
 async def _call_tool_result(
     name: str,
     arguments: dict[str, object],
@@ -830,10 +852,10 @@ async def _call_tool_result(
             "CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS."
         )
         logger.error(message)
-        return {"error": message}
+        return _tool_error_result(message)
     except Exception as exc:
         logger.exception("%s failed", name)
-        return {"error": str(exc)}
+        return _tool_error_result(str(exc))
 
 
 def _degraded_drift_output(*, message: str) -> dict[str, object]:
@@ -1058,14 +1080,14 @@ async def memory_recall(
                     "CONSOLIDATION_MEMORY_RECALL_TIMEOUT_SECONDS higher."
                 )
                 logger.error(message)
-                return {"error": message}
+                return _tool_error_result(message)
             except Exception as fallback_error:
                 message = (
                     f"memory_recall timed out after {recall_timeout:g}s and keyword fallback "
                     f"failed: {fallback_error}"
                 )
                 logger.error(message)
-                return {"error": message}
+                return _tool_error_result(message)
 
             payload = build_recall_timeout_fallback_result(
                 keyword_result,
@@ -1086,7 +1108,7 @@ async def memory_recall(
         return _json_payload(result)
     except Exception as exc:
         logger.exception("memory_recall failed")
-        return {"error": str(exc)}
+        return _tool_error_result(str(exc))
 
 
 @_tracked_tool()
@@ -1147,7 +1169,7 @@ async def memory_ask(
         )
     except Exception as exc:
         logger.exception("memory_ask failed")
-        return {"error": str(exc)}
+        return _tool_error_result(str(exc))
 
 
 @_tracked_tool()
@@ -1447,10 +1469,10 @@ async def memory_detect_drift(
             "Returned a degraded empty result instead of failing."
         )
         logger.error(message)
-        return _degraded_drift_output(message=message)
+        return _tool_error_result(message, structured=_degraded_drift_output(message=message))
     except Exception as exc:
         logger.exception("memory_detect_drift failed")
-        return {"error": str(exc)}
+        return _tool_error_result(str(exc))
 
 
 @_tracked_tool()
@@ -1555,10 +1577,10 @@ async def memory_consolidate() -> dict[str, Any]:
             "Raise CONSOLIDATION_MEMORY_TIMEOUT_MEMORY_CONSOLIDATE."
         )
         logger.error(message)
-        return {"error": message}
+        return _tool_error_result(message)
     except Exception as exc:
         logger.exception("memory_consolidate failed")
-        return {"error": str(exc)}
+        return _tool_error_result(str(exc))
 
 
 @_tracked_tool()

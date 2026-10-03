@@ -35,7 +35,7 @@ def test_call_tool_result_applies_default_timeout(monkeypatch):
     assert captured["name"] == "memory_policy_list"
 
 
-def test_call_tool_result_timeout_returns_error_object(monkeypatch):
+def test_call_tool_result_timeout_returns_error_result(monkeypatch):
     async def fake_run_blocking(func, *args, timeout=None, **kwargs):
         raise TimeoutError()
 
@@ -44,7 +44,10 @@ def test_call_tool_result_timeout_returns_error_object(monkeypatch):
 
     import asyncio
 
-    payload = asyncio.run(server._call_tool_result("memory_status", {}))
+    result = asyncio.run(server._call_tool_result("memory_status", {}))
+    assert result.is_error is True
+    assert "timed out" in result.content[0].text.lower()
+    payload = result.structured_content
     assert "error" in payload
     assert "timed out" in payload["error"].lower()
 

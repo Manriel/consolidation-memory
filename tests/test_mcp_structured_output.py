@@ -102,8 +102,11 @@ def test_stored_content_round_trips_byte_identically() -> None:
         assert returned.encode("utf-8") == _BYTE_IDENTITY_CONTENT.encode("utf-8")
 
 
-def test_error_result_is_a_structured_object(monkeypatch: Any) -> None:
+def test_error_result_is_is_error_with_structured_payload(monkeypatch: Any) -> None:
+    """Execution errors follow the spec: isError=true, actionable text, payload kept."""
     result = _call_status(monkeypatch, error=TimeoutError("boom"))
+    assert result.is_error is True
+    assert "timed out" in result.content[0].text
     structured = result.structured_content
     assert isinstance(structured, dict)
     assert isinstance(structured.get("error"), str)
