@@ -22,9 +22,9 @@ import tempfile
 import threading
 import time
 import traceback
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from typing import Annotated, Any, Awaitable, Callable, TypeAlias, TypeVar, cast
+from typing import Annotated, Any, TypeAlias, TypeVar, cast
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
@@ -267,17 +267,18 @@ _runtime_start_lock = threading.Lock()
 _stdio_singleton_guard = None
 ScopeInput: TypeAlias = dict[str, object] | str | None
 
-if os.name == "nt":
+# sys.platform (not os.name) so type checkers skip the Windows-only branch.
+if sys.platform == "win32":
     import msvcrt
-    _msvcrt_locking: Callable[[int, int, int], Any] = getattr(msvcrt, "locking")
-    _msvcrt_lk_nblck = int(getattr(msvcrt, "LK_NBLCK"))
-    _msvcrt_lk_unlck = int(getattr(msvcrt, "LK_UNLCK"))
+    _msvcrt_locking: Callable[[int, int, int], Any] = msvcrt.locking
+    _msvcrt_lk_nblck = int(msvcrt.LK_NBLCK)
+    _msvcrt_lk_unlck = int(msvcrt.LK_UNLCK)
 else:
     import fcntl
-    _fcntl_flock: Callable[[int, int], Any] = getattr(fcntl, "flock")
-    _fcntl_lock_ex = int(getattr(fcntl, "LOCK_EX"))
-    _fcntl_lock_nb = int(getattr(fcntl, "LOCK_NB"))
-    _fcntl_lock_un = int(getattr(fcntl, "LOCK_UN"))
+    _fcntl_flock: Callable[[int, int], Any] = fcntl.flock
+    _fcntl_lock_ex = int(fcntl.LOCK_EX)
+    _fcntl_lock_nb = int(fcntl.LOCK_NB)
+    _fcntl_lock_un = int(fcntl.LOCK_UN)
 
 
 def _drift_timeout_seconds() -> float:
@@ -338,7 +339,6 @@ def _warmup_await_seconds() -> float:
 
 async def _await_warmup_ready() -> bool:
     """Wait briefly for background cache warmup before interactive recall."""
-    global _warmup_task
     if _warmup_task is None or _warmup_task.done():
         return True
 
@@ -510,7 +510,7 @@ def _singleton_lock_path(*, project: str, parent_pid: int) -> str:
     if not safe_project:
         safe_project = "default"
     safe_project = safe_project[:48]
-    fingerprint = hashlib.sha256(f"{project}:{parent_pid}".encode("utf-8")).hexdigest()[:12]
+    fingerprint = hashlib.sha256(f"{project}:{parent_pid}".encode()).hexdigest()[:12]
     filename = (
         f"consolidation_memory_stdio_{safe_project}_{parent_pid}_{fingerprint}.lock"
     )
@@ -525,7 +525,7 @@ def _open_singleton_lock_handle(path: str):
 def _try_lock_singleton_handle(handle) -> bool:
     handle.seek(0, os.SEEK_SET)
     try:
-        if os.name == "nt":
+        if sys.platform == "win32":
             handle.seek(0, os.SEEK_END)
             if handle.tell() == 0:
                 handle.write(" ")
@@ -541,7 +541,7 @@ def _try_lock_singleton_handle(handle) -> bool:
 
 def _unlock_singleton_handle(handle) -> None:
     handle.seek(0, os.SEEK_SET)
-    if os.name == "nt":
+    if sys.platform == "win32":
         try:
             _msvcrt_locking(handle.fileno(), _msvcrt_lk_unlck, 1)
         except OSError:

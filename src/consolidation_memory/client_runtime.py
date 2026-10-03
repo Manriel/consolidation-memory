@@ -10,10 +10,11 @@ import logging
 import threading
 import time
 from collections import deque
-from collections.abc import Mapping
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from collections.abc import Callable, Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from consolidation_memory.types import (
     RUN_STATUS_COMPLETED,
@@ -144,12 +145,15 @@ def compute_health(
     if knowledge_consistency:
         ratio_val = knowledge_consistency.get("consistency_ratio")
         threshold_val = knowledge_consistency.get("threshold")
-        if isinstance(ratio_val, (int, float)) and isinstance(threshold_val, (int, float)):
-            if float(ratio_val) < float(threshold_val):
-                issues.append(
-                    "Knowledge markdown/record consistency below target "
-                    f"({float(ratio_val):.1%} < {float(threshold_val):.1%})"
-                )
+        if (
+            isinstance(ratio_val, (int, float))
+            and isinstance(threshold_val, (int, float))
+            and float(ratio_val) < float(threshold_val)
+        ):
+            issues.append(
+                "Knowledge markdown/record consistency below target "
+                f"({float(ratio_val):.1%} < {float(threshold_val):.1%})"
+            )
 
     if last_run:
         if last_run.get("status") == RUN_STATUS_FAILED:
@@ -184,9 +188,10 @@ def compute_health(
 
 def probe_backend(client: RuntimeClient) -> bool:
     """Quick check if embedding backend is reachable. Cached for 30s."""
-    from consolidation_memory.config import get_config
     from urllib.error import URLError
     from urllib.request import Request, urlopen
+
+    from consolidation_memory.config import get_config
 
     cfg = get_config()
     if cfg.EMBEDDING_BACKEND == "fastembed":
@@ -216,9 +221,10 @@ def probe_backend(client: RuntimeClient) -> bool:
 
 def check_embedding_backend(client: RuntimeClient) -> None:
     """Verify the embedding backend is reachable."""
-    from consolidation_memory.config import get_config
     from urllib.error import URLError
     from urllib.request import Request, urlopen
+
+    from consolidation_memory.config import get_config
 
     cfg = get_config()
     if cfg.EMBEDDING_BACKEND == "fastembed":

@@ -398,8 +398,9 @@ def create_app(*, bind_host: str | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         del app
         runtime.startup()
-        from consolidation_memory.config import get_active_project
         import logging
+
+        from consolidation_memory.config import get_active_project
 
         logging.getLogger("consolidation_memory").info(
             "REST API active project: %s", get_active_project()

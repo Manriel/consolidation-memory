@@ -32,7 +32,6 @@ if TYPE_CHECKING:
 
 from consolidation_memory.tool_dispatch import dispatch_tool_call as _dispatch_tool_call
 
-
 # ── Tool Schemas ─────────────────────────────────────────────────────────────
 
 _MAX_CONTENT_LENGTH = 50_000

@@ -20,16 +20,7 @@ def _load_release_docs_check_module():
 
 
 def _release_doc_text(module) -> str:
-    return "\n".join(
-        [
-            "RELEASE_AUTOMATION_PAT",
-            "workflow_dispatch",
-            "[skip release]",
-            "[release major|minor|patch]",
-            "update_changelog.py",
-            "changelog-on-main.yml",
-        ]
-    )
+    return "RELEASE_AUTOMATION_PAT\nworkflow_dispatch\n[skip release]\n[release major|minor|patch]\nupdate_changelog.py\nchangelog-on-main.yml"
 
 
 def test_evaluate_guard_noops_when_release_files_not_changed():

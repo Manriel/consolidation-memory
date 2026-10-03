@@ -89,10 +89,7 @@ def _is_record_current(record: dict, reference_time: datetime | None = None) -> 
         return False
 
     valid_until = _normalize_datetime(record.get("valid_until"))
-    if valid_until and valid_until <= now:
-        return False
-
-    return True
+    return not (valid_until and valid_until <= now)
 
 
 def _filter_unexpired(

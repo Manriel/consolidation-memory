@@ -17,6 +17,7 @@ from consolidation_memory.schemas import dispatch_tool_call
 
 try:
     from fastapi.testclient import TestClient
+
     from consolidation_memory.rest import create_app
 
     HAS_FASTAPI = True
@@ -84,19 +85,22 @@ class TestScopePolicyCrossSurfaceParity:
         from consolidation_memory.server import memory_store, memory_store_batch
 
         ensure_schema()
-        with MemoryClient(auto_consolidate=False) as client:
-            with pytest.MonkeyPatch.context() as mp:
-                async def _get_client():
-                    return client
+        with (
+            MemoryClient(auto_consolidate=False) as client,
+            pytest.MonkeyPatch.context() as mp,
+        ):
 
-                mp.setattr("consolidation_memory.server._get_client_with_timeout", _get_client)
-                store_output = asyncio.run(memory_store(content="blocked write", scope=_DENY_SCOPE))
-                batch_output = asyncio.run(
-                    memory_store_batch(
-                        episodes=[{"content": "blocked write"}],
-                        scope=_DENY_SCOPE,
-                    )
+            async def _get_client():
+                return client
+
+            mp.setattr("consolidation_memory.server._get_client_with_timeout", _get_client)
+            store_output = asyncio.run(memory_store(content="blocked write", scope=_DENY_SCOPE))
+            batch_output = asyncio.run(
+                memory_store_batch(
+                    episodes=[{"content": "blocked write"}],
+                    scope=_DENY_SCOPE,
                 )
+            )
 
         assert store_output["status"] == "write_denied"
         assert batch_output["status"] == "write_denied"
@@ -255,7 +259,11 @@ class TestScopePolicyCrossSurfaceParity:
     def test_forget_protect_and_correct_respect_write_deny_policy_across_surfaces(self, tmp_data_dir):
         from consolidation_memory.client import MemoryClient
         from consolidation_memory.config import get_config
-        from consolidation_memory.database import ensure_schema, insert_episode, upsert_knowledge_topic
+        from consolidation_memory.database import (
+            ensure_schema,
+            insert_episode,
+            upsert_knowledge_topic,
+        )
         from consolidation_memory.server import memory_correct, memory_forget, memory_protect
 
         ensure_schema()

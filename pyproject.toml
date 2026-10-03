@@ -85,6 +85,18 @@ where = ["src"]
 target-version = "py310"
 line-length = 100
 
+[tool.ruff.lint]
+ignore = [
+    # Deliberate catch-all at CLI, tool-dispatch and runtime boundaries:
+    # failures are logged and translated instead of crashing the process.
+    "BLE001",
+    # Silent best-effort cleanup paths; same policy as the bandit baseline (-s B110).
+    "S110",
+    # Validators raise ValueError on purpose: the REST layer maps ValueError to
+    # HTTP 400 and callers catch it; switching to TypeError would change that contract.
+    "TRY004",
+]
+
 [tool.mypy]
 python_version = "3.10"
 warn_return_any = true

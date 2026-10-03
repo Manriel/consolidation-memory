@@ -52,7 +52,7 @@ _LAZY_IMPORTS = {
     "RUN_STATUS_FAILED": "consolidation_memory.types",
 }
 
-__all__ = ["__version__", *_LAZY_IMPORTS]
+__all__ = ["__version__"] + list(_LAZY_IMPORTS)
 
 
 def __getattr__(name: str):

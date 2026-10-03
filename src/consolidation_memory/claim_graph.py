@@ -12,7 +12,6 @@ import unicodedata
 from collections.abc import Iterable, Mapping
 from typing import Any, TypedDict
 
-
 _WS_RE = re.compile(r"\s+")
 
 _RECORD_TYPE_ALIASES: dict[str, str] = {
@@ -186,8 +185,8 @@ def claims_from_records(records: Iterable[Mapping[str, Any]]) -> list[ClaimObjec
 
 
 __all__ = [
-    "ClaimObject",
     "DEFAULT_CLAIM_PRECISION",
+    "ClaimObject",
     "canonical_claim_id",
     "claim_from_record",
     "claim_text",

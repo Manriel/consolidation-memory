@@ -5,13 +5,15 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from typing import Any
 
 from consolidation_memory.db._helpers import _normalize_utc_timestamp, _now
 from consolidation_memory.db.connection import get_connection
 from consolidation_memory.db.scope import _apply_scope_filters, _coerce_scope_row
 from consolidation_memory.utils import parse_json_list
+
 
 def insert_knowledge_records(
     topic_id: str,

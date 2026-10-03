@@ -8,8 +8,9 @@ import re
 import sqlite3
 import threading
 import uuid
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from consolidation_memory.db._helpers import _normalize_id_tokens, _now
 from consolidation_memory.db.connection import get_connection

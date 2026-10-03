@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Literal, Mapping, Protocol, TypedDict
-
+from typing import Any, Literal, Protocol, TypedDict
 
 # ── Consolidation run status values ─────────────────────────────────────────
 # These match the strings stored in the consolidation_runs.status DB column.

@@ -11,7 +11,8 @@ Backend is lazily instantiated on first use based on config.EMBEDDING_BACKEND.
 import logging
 import threading
 import time
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 import httpx
 import numpy as np
@@ -230,8 +231,11 @@ def encode_documents(texts: list[str]) -> np.ndarray:
         return np.empty((0, get_dimension()), dtype=np.float32)
 
     from consolidation_memory.config import get_config
-
-    from consolidation_memory.recall_budget import RecallBudgetExceeded, deadline_exceeded, is_active
+    from consolidation_memory.recall_budget import (
+        RecallBudgetExceeded,
+        deadline_exceeded,
+        is_active,
+    )
 
     batch_size = max(1, int(get_config().EMBEDDING_ENCODE_BATCH_SIZE))
     if len(texts) <= batch_size:

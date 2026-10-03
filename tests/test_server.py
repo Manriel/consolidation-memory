@@ -18,7 +18,7 @@ from tests.helpers import as_payload
 
 @contextmanager
 def _patched_server_runtime():
-    import consolidation_memory.server as server
+    from consolidation_memory import server
     from consolidation_memory.runtime import MemoryRuntime
 
     runtime = MemoryRuntime(max_workers=2)
@@ -37,7 +37,7 @@ class TestMcpToolProfile:
     def test_simple_profile_registers_only_recall_remember_ask(self, monkeypatch):
         monkeypatch.setenv("CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE", "simple")
 
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         server = importlib.reload(server)
         tools = asyncio.run(server.mcp.list_tools())
@@ -48,7 +48,7 @@ class TestMcpToolProfile:
     def test_full_profile_registers_all_tools(self, monkeypatch):
         monkeypatch.setenv("CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE", "full")
 
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         server = importlib.reload(server)
         tools = asyncio.run(server.mcp.list_tools())
@@ -61,7 +61,7 @@ class TestMcpToolProfile:
     def test_invalid_profile_falls_back_to_full(self, monkeypatch):
         monkeypatch.setenv("CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE", "tiny")
 
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         server = importlib.reload(server)
         tools = asyncio.run(server.mcp.list_tools())
@@ -86,7 +86,7 @@ class TestServerEnvParsing:
             "",
         )
 
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         server = importlib.reload(server)
 
@@ -103,7 +103,7 @@ class TestServerEnvParsing:
     def test_mcp_client_factory_defaults_auto_consolidate_to_false(self, monkeypatch):
         monkeypatch.delenv("CONSOLIDATION_MEMORY_MCP_AUTO_CONSOLIDATE", raising=False)
 
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         server = importlib.reload(server)
         with patch("consolidation_memory.client.MemoryClient") as mock_client:
@@ -114,7 +114,7 @@ class TestServerEnvParsing:
     def test_mcp_client_factory_allows_auto_consolidate_override(self, monkeypatch):
         monkeypatch.setenv("CONSOLIDATION_MEMORY_MCP_AUTO_CONSOLIDATE", "true")
 
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         server = importlib.reload(server)
         with patch("consolidation_memory.client.MemoryClient") as mock_client:
@@ -405,7 +405,7 @@ class TestMCPServerLifecycle:
         assert "schema boom" in result["error"]
 
     def test_get_client_with_timeout_raises_timeout_error(self):
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         with (
             patch("consolidation_memory.server._ensure_runtime_started"),
@@ -503,9 +503,8 @@ class TestMCPServerLifecycle:
             with patch(
                 "consolidation_memory.server._get_client_with_timeout",
                 side_effect=AssertionError("warmup should not initialize during shutdown"),
-            ):
-                with patch("consolidation_memory.server._WARMUP_START_DELAY_SECONDS", 0.0):
-                    asyncio.run(server._warm_client_background())
+            ), patch("consolidation_memory.server._WARMUP_START_DELAY_SECONDS", 0.0):
+                asyncio.run(server._warm_client_background())
 
     def test_warm_recall_caches_primes_records_by_default(self):
         with (
@@ -526,7 +525,7 @@ class TestMCPServerLifecycle:
         mock_claims.assert_not_called()
 
     def test_run_server_acquires_and_releases_stdio_singleton_guard(self):
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         guard = MagicMock()
         with (
@@ -544,7 +543,7 @@ class TestMCPServerLifecycle:
         guard.release.assert_called_once_with()
 
     def test_run_server_releases_stdio_singleton_guard_on_transport_error(self):
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         guard = MagicMock()
         with (
@@ -564,7 +563,7 @@ class TestMCPServerLifecycle:
         guard.release.assert_called_once_with()
 
     def test_stdio_singleton_guard_rejects_duplicate_same_parent_server(self):
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         locked_handle = MagicMock()
         with (
@@ -585,15 +584,14 @@ class TestMCPServerLifecycle:
             patch(
                 "consolidation_memory.server._process_exists",
                 return_value=True,
-            ),
+            ),pytest.raises(RuntimeError, match="already running")
         ):
-            with pytest.raises(RuntimeError, match="already running"):
-                server._acquire_parent_scoped_stdio_singleton_guard("default")
+            server._acquire_parent_scoped_stdio_singleton_guard("default")
 
         locked_handle.close.assert_called_once_with()
 
     def test_safe_process_int_rejects_non_pid_values(self):
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         assert server._safe_process_int(True) is None
         assert server._safe_process_int(0) is None
@@ -605,7 +603,7 @@ class TestMCPServerLifecycle:
         assert server._safe_process_int("123") == 123
 
     def test_terminate_process_skips_reserved_and_parent_pids(self):
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         with (
             patch("consolidation_memory.server.os.getpid", return_value=50),
@@ -620,7 +618,7 @@ class TestMCPServerLifecycle:
         mock_kill.assert_called_once_with(99, server.signal.SIGTERM)
 
     def test_runtime_has_background_activity_detects_consolidation_future(self):
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         client = MagicMock()
         future = MagicMock()
@@ -636,7 +634,7 @@ class TestMCPServerLifecycle:
             assert server._runtime_has_background_activity() is True
 
     def test_runtime_has_background_activity_returns_false_when_idle(self):
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         client = MagicMock()
         future = MagicMock()
@@ -668,7 +666,7 @@ class TestMCPServerLifecycle:
             assert server._startup_error is None
 
     def test_idle_shutdown_monitor_recycles_runtime_instead_of_exiting(self):
-        import consolidation_memory.server as server
+        from consolidation_memory import server
 
         sleep_calls = 0
 
@@ -686,9 +684,9 @@ class TestMCPServerLifecycle:
             patch("consolidation_memory.server._runtime_has_background_activity", return_value=False),
             patch("consolidation_memory.server._recycle_idle_runtime") as mock_recycle,
             patch("consolidation_memory.server.asyncio.sleep", side_effect=_fake_sleep),
+            pytest.raises(asyncio.CancelledError),
         ):
-            with pytest.raises(asyncio.CancelledError):
-                asyncio.run(server._idle_shutdown_monitor())
+            asyncio.run(server._idle_shutdown_monitor())
 
         mock_recycle.assert_called_once_with()
 

@@ -4,19 +4,21 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-if os.name == "nt":
+if sys.platform == "win32":
     import msvcrt
 
-    _msvcrt_locking: Callable[[int, int, int], Any] = getattr(msvcrt, "locking")
-    _msvcrt_lk_nblck = int(getattr(msvcrt, "LK_NBLCK"))
-    _msvcrt_lk_unlck = int(getattr(msvcrt, "LK_UNLCK"))
+    _msvcrt_locking: Callable[[int, int, int], Any] = msvcrt.locking
+    _msvcrt_lk_nblck = int(msvcrt.LK_NBLCK)
+    _msvcrt_lk_unlck = int(msvcrt.LK_UNLCK)
 else:  # pragma: no cover - exercised on non-Windows CI
     import fcntl
 
@@ -24,7 +26,7 @@ else:  # pragma: no cover - exercised on non-Windows CI
 def _try_lock_file(handle: Any) -> None:
     """Attempt non-blocking exclusive lock of a lockfile handle."""
     handle.seek(0)
-    if os.name == "nt":
+    if sys.platform == "win32":
         _msvcrt_locking(handle.fileno(), _msvcrt_lk_nblck, 1)
     else:  # pragma: no cover - exercised on non-Windows CI
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]
@@ -33,7 +35,7 @@ def _try_lock_file(handle: Any) -> None:
 def _unlock_file(handle: Any) -> None:
     """Release exclusive lock for a lockfile handle."""
     handle.seek(0)
-    if os.name == "nt":
+    if sys.platform == "win32":
         _msvcrt_locking(handle.fileno(), _msvcrt_lk_unlck, 1)
     else:  # pragma: no cover - exercised on non-Windows CI
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)  # type: ignore[attr-defined]

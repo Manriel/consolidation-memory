@@ -33,7 +33,7 @@ class OpenAIEmbeddingBackend:
     def _get_transient_exceptions(self) -> tuple:
         """Return OpenAI SDK transient exception types (import-time safe)."""
         try:
-            from openai import APIError, APITimeoutError, APIConnectionError
+            from openai import APIConnectionError, APIError, APITimeoutError
             return (APIError, APITimeoutError, APIConnectionError, ConnectionError, TimeoutError)
         except ImportError:
             return (ConnectionError, TimeoutError, OSError)
@@ -85,7 +85,7 @@ class OpenAILLMBackend:
 
     def _get_transient_exceptions(self) -> tuple:
         try:
-            from openai import APIError, APITimeoutError, APIConnectionError
+            from openai import APIConnectionError, APIError, APITimeoutError
             return (APIError, APITimeoutError, APIConnectionError, ConnectionError, TimeoutError)
         except ImportError:
             return (ConnectionError, TimeoutError, OSError)

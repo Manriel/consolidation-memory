@@ -98,12 +98,11 @@ def invoke_surfaces_with_execute_tool_call(
         with patch(
             "consolidation_memory.rest.MemoryRuntime.get_client_with_timeout",
             return_value=mock_client,
-        ):
-            with TestClient(app) as client:
-                if rest_method.upper() == "GET":
-                    rest_resp = client.get(rest_path)
-                else:
-                    rest_resp = client.post(rest_path, json=rest_body)
+        ), TestClient(app) as client:
+            if rest_method.upper() == "GET":
+                rest_resp = client.get(rest_path)
+            else:
+                rest_resp = client.post(rest_path, json=rest_body)
         rest_out = rest_resp.json()
 
     assert rest_resp.status_code == 200

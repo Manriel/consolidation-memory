@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from consolidation_memory.config import get_config as _get_config
 from consolidation_memory.db._helpers import _now

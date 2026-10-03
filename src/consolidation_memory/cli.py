@@ -98,6 +98,7 @@ def cmd_serve(args):
     if getattr(args, "rest", False):
         try:
             import uvicorn
+
             from consolidation_memory.rest import create_app, validate_rest_bind
         except ImportError:
             print("REST API requires: pip install consolidation-memory[rest]")
@@ -119,7 +120,7 @@ def cmd_serve(args):
 
 def _write_default_config(*, embed_backend: str, llm_backend: str) -> None:
     """Write a starter config.toml and initialize data directories."""
-    from consolidation_memory.config import get_default_config_dir, get_config, get_active_project
+    from consolidation_memory.config import get_active_project, get_config, get_default_config_dir
 
     embed_config = f"backend = {_toml_basic_string(embed_backend)}"
     llm_config = f"backend = {_toml_basic_string(llm_backend)}"
@@ -269,6 +270,7 @@ def cmd_init(quick: bool = False):
 def cmd_test() -> None:
     """Verify installation works end-to-end."""
     import uuid
+
     from consolidation_memory.config import get_config
     from consolidation_memory.database import (
         ensure_schema,
@@ -457,6 +459,7 @@ def cmd_detect_drift(base_ref: str | None = None, repo_path: str | None = None):
 
 def cmd_status():
     """Show system statistics."""
+    from consolidation_memory.config import get_active_project, get_config
     from consolidation_memory.database import (
         count_active_challenged_claims,
         ensure_schema,
@@ -465,7 +468,6 @@ def cmd_status():
         get_recently_contradicted_topic_ids,
         get_stats,
     )
-    from consolidation_memory.config import get_config, get_active_project
     cfg = get_config()
 
     ensure_schema()
@@ -543,11 +545,14 @@ def cmd_status():
 
 def cmd_export():
     """Export to JSON."""
+    from datetime import datetime, timezone
+
+    from consolidation_memory.config import get_config
     from consolidation_memory.database import (
+        ensure_schema,
         get_all_action_outcome_refs,
         get_all_action_outcome_sources,
         get_all_action_outcomes,
-        ensure_schema,
         get_all_active_records,
         get_all_claim_edges,
         get_all_claim_events,
@@ -557,8 +562,6 @@ def cmd_export():
         get_all_episodes,
         get_all_knowledge_topics,
     )
-    from consolidation_memory.config import get_config
-    from datetime import datetime, timezone
     from consolidation_memory.knowledge_paths import resolve_topic_path
 
     cfg = get_config()
@@ -696,15 +699,22 @@ def cmd_import(path: str):
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
     from pathlib import Path
-    from consolidation_memory.database import (
-        ensure_schema, insert_episode, upsert_knowledge_topic, get_episode,
-        insert_knowledge_records, hard_delete_episode, mark_episode_indexed,
-        import_claim_graph_snapshot, get_connection,
-    )
+
     from consolidation_memory.backends import encode_documents
-    from consolidation_memory.vector_store import VectorStore
     from consolidation_memory.config import get_config
+    from consolidation_memory.database import (
+        ensure_schema,
+        get_connection,
+        get_episode,
+        hard_delete_episode,
+        import_claim_graph_snapshot,
+        insert_episode,
+        insert_knowledge_records,
+        mark_episode_indexed,
+        upsert_knowledge_topic,
+    )
     from consolidation_memory.knowledge_paths import resolve_topic_path
+    from consolidation_memory.vector_store import VectorStore
 
     cfg = get_config()
     export_path = Path(path)
@@ -1080,9 +1090,9 @@ def cmd_reindex() -> None:
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
-    from consolidation_memory.database import ensure_schema, get_all_episodes
     from consolidation_memory.backends import encode_documents, get_dimension
     from consolidation_memory.config import get_config
+    from consolidation_memory.database import ensure_schema, get_all_episodes
     from consolidation_memory.vector_store import VectorStore
     try:
         import faiss
@@ -1190,8 +1200,12 @@ def cmd_reindex() -> None:
 
 def cmd_browse() -> None:
     """List knowledge topics interactively."""
-    from consolidation_memory.database import ensure_schema, get_all_knowledge_topics, get_all_active_records
     from consolidation_memory.config import get_config
+    from consolidation_memory.database import (
+        ensure_schema,
+        get_all_active_records,
+        get_all_knowledge_topics,
+    )
 
     cfg = get_config()
     ensure_schema()
@@ -1385,12 +1399,12 @@ def cmd_policy_list() -> None:
         if isinstance(principal_obj, dict) and principal_obj.get("type") and principal_obj.get("key"):
             principal = f"{principal_obj['type']}:{principal_obj['key']}"
         print(
-            f"{str(row.get('policy_id', '')):<38} "
-            f"{str(row.get('namespace_slug') or '*'):<12} "
-            f"{str(row.get('project_slug') or '*'):<12} "
+            f"{row.get('policy_id', '')!s:<38} "
+            f"{row.get('namespace_slug') or '*'!s:<12} "
+            f"{row.get('project_slug') or '*'!s:<12} "
             f"{principal:<28} "
-            f"{str(row.get('write_mode') or '-'):<6} "
-            f"{str(row.get('read_visibility') or '-'):<10}"
+            f"{row.get('write_mode') or '-'!s:<6} "
+            f"{row.get('read_visibility') or '-'!s:<10}"
         )
 
 
@@ -1425,8 +1439,10 @@ def cmd_policy_grant(
 def cmd_ui(host: str = "127.0.0.1", port: int = 8080, open_browser: bool = True) -> None:
     """Start the browser UI (REST API + web app)."""
     try:
-        import uvicorn
         import webbrowser
+
+        import uvicorn
+
         from consolidation_memory.rest import create_app, validate_rest_bind
     except ImportError:
         print("Browser UI requires: pip install consolidation-memory[rest]")

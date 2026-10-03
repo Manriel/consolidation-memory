@@ -6,7 +6,8 @@ Requires: pip install consolidation-memory[desktop]
 from __future__ import annotations
 
 import sys
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from consolidation_memory.desktop_backend import DesktopBackend
 
@@ -28,9 +29,9 @@ try:
         QPushButton,
         QStatusBar,
         QSystemTrayIcon,
-        QTabWidget,
         QTableWidget,
         QTableWidgetItem,
+        QTabWidget,
         QTextBrowser,
         QTextEdit,
         QVBoxLayout,
@@ -167,7 +168,7 @@ if _PYSIDE_AVAILABLE:
         def run(self) -> None:
             try:
                 result = self._fn(*self._args, **self._kwargs)
-            except Exception as exc:  # noqa: BLE001 - surface to UI
+            except Exception as exc:
                 self.failed.emit(str(exc))
                 return
             self.finished_ok.emit(result)

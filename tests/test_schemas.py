@@ -5,22 +5,22 @@ Run with: python -m pytest tests/test_schemas.py -v
 
 from unittest.mock import MagicMock
 
-from consolidation_memory.schemas import openai_tools, dispatch_tool_call
+from consolidation_memory.schemas import dispatch_tool_call, openai_tools
 from consolidation_memory.types import (
-    BrowseResult,
-    StoreResult,
     BatchStoreResult,
-    CorrectResult,
-    ExportResult,
-    RecallResult,
-    SearchResult,
+    BrowseResult,
     ClaimBrowseResult,
     ClaimSearchResult,
+    CorrectResult,
+    ExportResult,
+    ForgetResult,
     OutcomeBrowseResult,
     OutcomeRecordResult,
-    ForgetResult,
     ProtectResult,
+    RecallResult,
+    SearchResult,
     StatusResult,
+    StoreResult,
     TimelineResult,
     TopicDetailResult,
 )

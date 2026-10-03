@@ -28,7 +28,7 @@ import threading as _threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from platformdirs import user_data_dir, user_config_dir
+from platformdirs import user_config_dir, user_data_dir
 
 if sys.version_info >= (3, 11):
     import tomllib
