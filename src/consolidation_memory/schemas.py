@@ -1051,7 +1051,10 @@ MEMORY_POLICY_LIST_SCHEMA: dict[str, Any] = {
         "name": "memory_policy_list",
         "description": (
             "List persisted namespace/project access policies and ACL bindings. "
-            "Use to inspect who can read or write memory in self-hosted deployments."
+            "Use to inspect who can read or write memory in self-hosted deployments. "
+            "Like scope discovery, this listing is deployment-wide: it is NOT "
+            "filtered by read_visibility or the caller's scope, so it names every "
+            "persisted binding, including principals the caller cannot read into."
         ),
         "parameters": {
             "type": "object",

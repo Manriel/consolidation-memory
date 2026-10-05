@@ -47,7 +47,7 @@ python scripts/generate_tool_reference.py
 
 ## memory_store
 
-Store a memory episode in the episodic buffer.
+Store a memory episode in the episodic buffer. Always store memories when you learn something new about the user, solve a problem, discover a preference, or encounter something surprising. Write content as a self-contained note that future-you can understand without context. Include both the problem AND solution for solution-type memories. Do NOT store trivial exchanges like greetings.
 
 ### Input
 
@@ -74,7 +74,7 @@ Store a memory episode in the episodic buffer.
 
 ## memory_recall
 
-Retrieve relevant memories by semantic similarity.
+Retrieve relevant memories by semantic similarity. Returns episodes, knowledge documents, and individual knowledge records (facts, solutions, preferences, procedures, strategies). Call this at the start of every new conversation and when context about the user's setup or preferences would improve your response. This is your persistent memory.
 
 ### Input
 
@@ -109,7 +109,7 @@ Retrieve relevant memories by semantic similarity.
 
 ## memory_remember
 
-Save memory using plain language (note, fix, fact, preference).
+Save something to memory using plain language. Prefer this over memory_store when you do not need advanced content_type control. Use kind=fix for debugging solutions (problem + what worked).
 
 ### Input
 
@@ -135,7 +135,7 @@ Save memory using plain language (note, fix, fact, preference).
 
 ## memory_ask
 
-Search memory with a plain-language question; returns compact results.
+Search memory with a plain-language question. Returns a compact summary of matching episodes, records, claims, and topics. Call at conversation start (or use memory_recall when hooks require it). Prefer this over memory_recall for everyday retrieval.
 
 ### Input
 
@@ -160,7 +160,7 @@ Search memory with a plain-language question; returns compact results.
 
 ## memory_store_batch
 
-Store multiple memory episodes in a single operation.
+Store multiple memory episodes in a single operation. More efficient than calling memory_store repeatedly.
 
 ### Input
 
@@ -180,7 +180,7 @@ Store multiple memory episodes in a single operation.
 
 ## memory_search
 
-Keyword/metadata search over episodes.
+Keyword/metadata search over episodes. Works without embedding backend. Unlike memory_recall (semantic similarity), this does plain text matching. Use when the embedding backend is down, or for exact substring searches.
 
 ### Input
 
@@ -205,7 +205,7 @@ Keyword/metadata search over episodes.
 
 ## memory_claim_browse
 
-Browse claims from the claim graph.
+Browse claims from the claim graph. Supports optional type filtering and temporal snapshot queries via as_of.
 
 ### Input
 
@@ -228,7 +228,7 @@ Browse claims from the claim graph.
 
 ## memory_claim_search
 
-Search claims by text with optional temporal snapshot filtering.
+Search claims using deterministic phrase and keyword matching. Supports optional claim type filtering and temporal as_of queries.
 
 ### Input
 
@@ -253,7 +253,7 @@ Search claims by text with optional temporal snapshot filtering.
 
 ## memory_outcome_record
 
-Record an action outcome observation with provenance links.
+Record whether a strategy/action worked. Outcome observations are durable evidence for trust scoring and can be linked to claim/record/episode provenance, code anchors, and issue/PR identifiers.
 
 ### Input
 
@@ -288,7 +288,7 @@ Record an action outcome observation with provenance links.
 
 ## memory_outcome_browse
 
-Browse recorded action outcomes with optional filters.
+Browse recorded outcome observations over time with optional source and temporal filters.
 
 ### Input
 
@@ -319,7 +319,7 @@ Browse recorded action outcomes with optional filters.
 
 ## memory_detect_drift
 
-Detect code drift and challenge impacted claims.
+Detect code drift by checking changed files and challenge impacted claims. Use after substantial file edits.
 
 ### Input
 
@@ -340,7 +340,7 @@ Detect code drift and challenge impacted claims.
 
 ## memory_status
 
-Show memory system statistics, including fast-path consolidation metrics.
+Show memory system statistics, including trust posture, claim coverage, provenance coverage, drift-watch pressure, episode counts, backend info, and fast-path consolidation metrics (fast_path_hits / llm_fallbacks from the last run).
 
 ### Input
 
@@ -376,7 +376,7 @@ Show memory system statistics, including fast-path consolidation metrics.
 
 ## memory_forget
 
-Mark an episode for removal from the memory system.
+Mark an episode for removal from the memory system. Use to forget specific memories that are incorrect, outdated, or that the user wants removed.
 
 ### Input
 
@@ -395,7 +395,7 @@ Mark an episode for removal from the memory system.
 
 ## memory_export
 
-Export all episodes and knowledge to a JSON snapshot.
+Export all episodes and knowledge to a JSON snapshot. Creates a timestamped backup file and returns the file path.
 
 ### Input
 
@@ -422,7 +422,7 @@ Export all episodes and knowledge to a JSON snapshot.
 
 ## memory_correct
 
-Correct a knowledge document with new information.
+Correct a knowledge document with new information. Use when you discover that a knowledge document contains outdated or incorrect information and needs to be updated.
 
 ### Input
 
@@ -443,7 +443,7 @@ Correct a knowledge document with new information.
 
 ## memory_compact
 
-Compact the FAISS index by removing tombstoned vectors.
+Compact the FAISS index by removing tombstoned vectors. Call when memory_status shows high tombstone count or ratio.
 
 ### Input
 
@@ -459,7 +459,7 @@ Takes no arguments.
 
 ## memory_consolidate
 
-Manually trigger a consolidation run.
+Manually trigger a consolidation run. Clusters unconsolidated episodes, synthesizes knowledge, prunes old episodes, and compacts FAISS. Can take several minutes.
 
 ### Input
 
@@ -492,7 +492,7 @@ Takes no arguments.
 
 ## memory_consolidation_log
 
-Show recent consolidation activity as a human-readable changelog.
+Show recent consolidation activity as a human-readable changelog. Returns summaries of recent runs: topics created/updated, contradictions detected, episodes pruned.
 
 ### Input
 
@@ -512,7 +512,7 @@ Show recent consolidation activity as a human-readable changelog.
 
 ## memory_decay_report
 
-Show what would be forgotten if pruning ran right now.
+Show what would be forgotten if pruning ran right now. Reports prunable episodes, low-confidence records, and protected episode counts. Does NOT actually delete anything.
 
 ### Input
 
@@ -532,7 +532,7 @@ Show what would be forgotten if pruning ran right now.
 
 ## memory_protect
 
-Mark episodes as immune to pruning.
+Mark episodes as immune to pruning. Protect specific episodes or all episodes with a given tag from being pruned during consolidation.
 
 ### Input
 
@@ -552,7 +552,7 @@ Mark episodes as immune to pruning.
 
 ## memory_timeline
 
-Show how understanding of a topic has changed over time.
+Show how understanding of a topic has changed over time. Returns all knowledge records matching the topic sorted chronologically, including expired/superseded records.
 
 ### Input
 
@@ -572,7 +572,7 @@ Show how understanding of a topic has changed over time.
 
 ## memory_contradictions
 
-List detected contradictions from the audit log.
+List detected contradictions from the audit log. Shows cases where knowledge records contradicted each other during consolidation, including both the old and new content and how it was resolved.
 
 ### Input
 
@@ -592,7 +592,7 @@ List detected contradictions from the audit log.
 
 ## memory_browse
 
-Browse all knowledge topics with summaries and metadata.
+Browse all knowledge topics with summaries and metadata. Returns titles, summaries, record counts by type, confidence scores, and file paths.
 
 ### Input
 
@@ -609,7 +609,7 @@ Browse all knowledge topics with summaries and metadata.
 
 ## memory_read_topic
 
-Read the full markdown content of a knowledge topic.
+Read the full markdown content of a knowledge topic. Use memory_browse first to see available topics.
 
 ### Input
 
@@ -629,7 +629,7 @@ Read the full markdown content of a knowledge topic.
 
 ## memory_hygiene_scan
 
-Scan the corpus for noisy episodes and orphaned active claims.
+Read-only corpus hygiene report: noisy episode candidates, orphaned active claims, and stale episode sources. Use before batch cleanup.
 
 ### Input
 
@@ -646,7 +646,7 @@ Takes no arguments.
 
 ## memory_hygiene_apply
 
-Apply corpus hygiene cleanup (forget episodes, optionally expire orphans).
+Apply corpus hygiene: forget selected or recommended noisy episodes and optionally expire orphaned claims. Irreversible unless dry_run=true.
 
 ### Input
 
@@ -671,7 +671,7 @@ Apply corpus hygiene cleanup (forget episodes, optionally expire orphans).
 
 ## memory_policy_list
 
-List persisted access policies and ACL bindings.
+List persisted namespace/project access policies and ACL bindings. Use to inspect who can read or write memory in self-hosted deployments. Like scope discovery, this listing is deployment-wide: it is NOT filtered by read_visibility or the caller's scope, so it names every persisted binding, including principals the caller cannot read into.
 
 ### Input
 
@@ -687,7 +687,7 @@ Takes no arguments.
 
 ## memory_scope_list
 
-Discover which scopes exist: lists every scope that has stored data, with per-table usage counts and a canonical scope envelope you can pass back as the scope argument of other tools.
+Discover which scopes exist: lists every scope that has stored data, with per-table usage counts and a canonical scope envelope you can pass back as the scope argument of other tools. Counts cover live rows only. This listing is deployment-wide: it is a topology audit, intentionally NOT filtered by read_visibility, policy or the caller's scope, so it names every scope that holds data. No content is read through it. Keep the MCP subprocess off untrusted multi-tenant deployments without OS-level isolation.
 
 ### Input
 
@@ -707,7 +707,7 @@ Discover which scopes exist: lists every scope that has stored data, with per-ta
 
 ## memory_policy_grant
 
-Create or update a persisted policy ACL binding.
+Create or update a persisted ACL binding for a principal. Omitted namespace or project selectors act as wildcards. Provide at least one of write_mode or read_visibility.
 
 ### Input
 

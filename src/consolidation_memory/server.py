@@ -13,6 +13,7 @@ import functools
 import gc
 import hashlib
 import importlib
+import inspect
 import json
 import logging
 import math
@@ -924,6 +925,9 @@ async def lifespan(server: MCPServer):
     # Re-check that the argument set the SDK enforces is still the published one,
     # in case a tool was registered after the import-time check.
     _verify_published_argument_contract()
+    # A tool registered after the import-time check must still publish the same
+    # description the OpenAI surface does.
+    _verify_tool_descriptions()
     _preload_numeric_backends()
     if _warmup_on_start() and _runtime_started and _startup_error is None:
         _warmup_task = asyncio.create_task(_warm_client_background())
@@ -976,6 +980,58 @@ mcp_compat.ArgModelBase.model_config = ConfigDict(arbitrary_types_allowed=True, 
 mcp = MCPServer("consolidation_memory", lifespan=lifespan)
 
 
+@functools.lru_cache(maxsize=1)
+def _published_tool_descriptions() -> dict[str, str]:
+    """Tool descriptions as published to OpenAI-compatible callers.
+
+    ``schemas.openai_tools`` is the single source for what each tool says it
+    does. The MCP surface would otherwise publish the handler docstring, which
+    is a one-line summary: the decision guidance a host needs to pick between
+    ``memory_search`` and ``memory_recall``, or the fact that
+    ``memory_scope_list`` is a deployment-wide listing outside the read filter,
+    never reaches an MCP host. Sharing the string removes the second copy
+    instead of maintaining two.
+    """
+    from consolidation_memory.schemas import openai_tools
+
+    return {
+        str(tool["function"]["name"]): str(tool["function"]["description"])
+        for tool in openai_tools
+    }
+
+
+def _verify_tool_descriptions() -> None:
+    """Fail at import when a tool's docstring contradicts its published text.
+
+    The description is load-bearing: it is what a host reads to decide whether
+    and how to call a tool, and it is the only place a caller learns that
+    ``memory_scope_list`` and ``memory_policy_list`` are not read-visibility
+    filtered. Drift between the two must not reach a client.
+    """
+    published = _published_tool_descriptions()
+    for name, description in sorted(published.items()):
+        handler = globals().get(name)
+        if handler is None:
+            raise mcp_compat.MCPCompatError(
+                f"Tool {name} is published in schemas.openai_tools but no handler is "
+                "defined in server.py, so the two surfaces cannot agree on it."
+            )
+        docstring = inspect.getdoc(handler)
+        if not docstring:
+            raise mcp_compat.MCPCompatError(
+                f"Tool {name} has no docstring; the MCP surface would publish no "
+                "description at all while the OpenAI surface publishes one."
+            )
+        if " ".join(docstring.split()) != " ".join(description.split()):
+            raise mcp_compat.MCPCompatError(
+                f"Tool {name} docstring diverges from its published description.\n"
+                f"  docstring:  {' '.join(docstring.split())[:200]}\n"
+                f"  published:  {' '.join(description.split())[:200]}\n"
+                "Both surfaces must publish the same text; fix the docstring or the "
+                "schemas.openai_tools entry."
+            )
+
+
 def _tracked_tool() -> Callable[[Callable[..., Awaitable[_T]]], Callable[..., Awaitable[_T]]]:
     """Wrap MCP tools with lightweight activity accounting for idle shutdown."""
 
@@ -983,7 +1039,7 @@ def _tracked_tool() -> Callable[[Callable[..., Awaitable[_T]]], Callable[..., Aw
         if not _mcp_tool_allowed(func.__name__):
             return func
 
-        @mcp.tool()
+        @mcp.tool(description=_published_tool_descriptions().get(func.__name__))
         @functools.wraps(func)
         async def _wrapped(*args: object, **kwargs: object) -> _T:
             _begin_tool_call()
@@ -1020,7 +1076,11 @@ async def memory_store(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> StoreOutput:
-    """Store a memory episode in the episodic buffer."""
+    """Store a memory episode in the episodic buffer. Always store memories when you learn
+   something new about the user, solve a problem, discover a preference, or encounter something
+   surprising. Write content as a self-contained note that future-you can understand without
+   context. Include both the problem AND solution for solution-type memories. Do NOT store
+   trivial exchanges like greetings."""
     return await _call_tool_result(
         "memory_store",
         {
@@ -1078,7 +1138,10 @@ async def memory_recall(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> RecallOutput:
-    """Retrieve relevant memories by semantic similarity."""
+    """Retrieve relevant memories by semantic similarity. Returns episodes, knowledge documents,
+   and individual knowledge records (facts, solutions, preferences, procedures, strategies).
+   Call this at the start of every new conversation and when context about the user's setup or
+   preferences would improve your response. This is your persistent memory."""
     try:
         await _await_warmup_ready()
         client = await _get_client_with_timeout()
@@ -1177,7 +1240,9 @@ async def memory_remember(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> StoreOutput:
-    """Save memory using plain language (note, fix, fact, preference)."""
+    """Save something to memory using plain language. Prefer this over memory_store when you do not
+   need advanced content_type control. Use kind=fix for debugging solutions (problem + what
+   worked)."""
     return await _call_tool_result(
         "memory_remember",
         {
@@ -1201,7 +1266,9 @@ async def memory_ask(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> AskOutput:
-    """Search memory with a plain-language question; returns compact results."""
+    """Search memory with a plain-language question. Returns a compact summary of matching
+   episodes, records, claims, and topics. Call at conversation start (or use memory_recall when
+   hooks require it). Prefer this over memory_recall for everyday retrieval."""
     try:
         await _await_warmup_ready()
         recall_timeout = _recall_timeout_seconds()
@@ -1230,7 +1297,8 @@ async def memory_store_batch(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> BatchStoreOutput:
-    """Store multiple memory episodes in a single operation."""
+    """Store multiple memory episodes in a single operation. More efficient than calling
+   memory_store repeatedly."""
     return await _call_tool_result(
         "memory_store_batch",
         {"episodes": episodes, "scope": scope},
@@ -1265,7 +1333,9 @@ async def memory_search(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> SearchOutput:
-    """Keyword/metadata search over episodes."""
+    """Keyword/metadata search over episodes. Works without embedding backend. Unlike memory_recall
+   (semantic similarity), this does plain text matching. Use when the embedding backend is
+   down, or for exact substring searches."""
     return await _call_tool_result(
         "memory_search",
         {
@@ -1296,7 +1366,8 @@ async def memory_claim_browse(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> ClaimBrowseOutput:
-    """Browse claims from the claim graph."""
+    """Browse claims from the claim graph. Supports optional type filtering and temporal snapshot
+   queries via as_of."""
     return await _call_tool_result(
         "memory_claim_browse",
         {
@@ -1328,7 +1399,8 @@ async def memory_claim_search(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> ClaimSearchOutput:
-    """Search claims by text with optional temporal snapshot filtering."""
+    """Search claims using deterministic phrase and keyword matching. Supports optional claim type
+   filtering and temporal as_of queries."""
     return await _call_tool_result(
         "memory_claim_search",
         {
@@ -1398,7 +1470,9 @@ async def memory_outcome_record(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> OutcomeRecordOutput:
-    """Record an action outcome observation with provenance links."""
+    """Record whether a strategy/action worked. Outcome observations are durable evidence for trust
+   scoring and can be linked to claim/record/episode provenance, code anchors, and issue/PR
+   identifiers."""
     return await _call_tool_result(
         "memory_outcome_record",
         {
@@ -1450,7 +1524,7 @@ async def memory_outcome_browse(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> OutcomeBrowseOutput:
-    """Browse recorded action outcomes with optional filters."""
+    """Browse recorded outcome observations over time with optional source and temporal filters."""
     return await _call_tool_result(
         "memory_outcome_browse",
         {
@@ -1477,7 +1551,8 @@ async def memory_detect_drift(
         Field(description="Optional repository path (defaults to current working directory)."),
     ] = None,
 ) -> DriftScanOutput:
-    """Detect code drift and challenge impacted claims."""
+    """Detect code drift by checking changed files and challenge impacted claims. Use after
+   substantial file edits."""
     timeout_seconds = _drift_timeout_seconds()
     try:
         result = await run_detect_drift_subprocess(
@@ -1540,7 +1615,9 @@ async def memory_status(
         Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
     ] = False,
 ) -> StatusOutput:
-    """Show memory system statistics, including fast-path consolidation metrics."""
+    """Show memory system statistics, including trust posture, claim coverage, provenance coverage,
+   drift-watch pressure, episode counts, backend info, and fast-path consolidation metrics
+   (fast_path_hits / llm_fallbacks from the last run)."""
     payload: dict[str, object] = {}
     if lightweight is not None:
         payload["lightweight"] = lightweight
@@ -1565,7 +1642,8 @@ async def memory_forget(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> ForgetOutput:
-    """Mark an episode for removal from the memory system."""
+    """Mark an episode for removal from the memory system. Use to forget specific memories that are
+   incorrect, outdated, or that the user wants removed."""
     return await _call_tool_result("memory_forget", {"episode_id": episode_id, "scope": scope})
 
 
@@ -1574,7 +1652,8 @@ async def memory_export(scope: Annotated[
     ScopeInput,
     Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
 ] = None) -> ExportOutput:
-    """Export all episodes and knowledge to a JSON snapshot."""
+    """Export all episodes and knowledge to a JSON snapshot. Creates a timestamped backup file and
+   returns the file path."""
     return await _call_tool_result("memory_export", {"scope": scope})
 
 
@@ -1593,7 +1672,8 @@ async def memory_correct(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> CorrectOutput:
-    """Correct a knowledge document with new information."""
+    """Correct a knowledge document with new information. Use when you discover that a knowledge
+   document contains outdated or incorrect information and needs to be updated."""
     return await _call_tool_result(
         "memory_correct",
         {"topic_filename": topic_filename, "correction": correction, "scope": scope},
@@ -1602,13 +1682,15 @@ async def memory_correct(
 
 @_tracked_tool()
 async def memory_compact() -> CompactOutput:
-    """Compact the FAISS index by removing tombstoned vectors."""
+    """Compact the FAISS index by removing tombstoned vectors. Call when memory_status shows high
+   tombstone count or ratio."""
     return await _call_tool_result("memory_compact", {})
 
 
 @_tracked_tool()
 async def memory_consolidate() -> ConsolidationOutput:
-    """Manually trigger a consolidation run."""
+    """Manually trigger a consolidation run. Clusters unconsolidated episodes, synthesizes
+   knowledge, prunes old episodes, and compacts FAISS. Can take several minutes."""
     try:
         # Import SciPy on the asyncio main thread before worker execution.
         _ensure_scipy_for_consolidate()
@@ -1648,7 +1730,8 @@ async def memory_consolidation_log(
         Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
     ] = False,
 ) -> ConsolidationLogOutput:
-    """Show recent consolidation activity as a human-readable changelog."""
+    """Show recent consolidation activity as a human-readable changelog. Returns summaries of
+   recent runs: topics created/updated, contradictions detected, episodes pruned."""
     payload: dict[str, object] = {"last_n": last_n, "scope": scope}
     if global_scope:
         payload["global_scope"] = True
@@ -1666,7 +1749,8 @@ async def memory_decay_report(
         Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
     ] = False,
 ) -> DecayReportOutput:
-    """Show what would be forgotten if pruning ran right now."""
+    """Show what would be forgotten if pruning ran right now. Reports prunable episodes,
+   low-confidence records, and protected episode counts. Does NOT actually delete anything."""
     payload: dict[str, object] = {"scope": scope}
     if global_scope:
         payload["global_scope"] = True
@@ -1685,7 +1769,8 @@ async def memory_protect(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> ProtectOutput:
-    """Mark episodes as immune to pruning."""
+    """Mark episodes as immune to pruning. Protect specific episodes or all episodes with a given
+   tag from being pruned during consolidation."""
     return await _call_tool_result(
         "memory_protect",
         {"episode_id": episode_id, "tag": tag, "scope": scope},
@@ -1700,7 +1785,8 @@ async def memory_timeline(topic: Annotated[
     ScopeInput,
     Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
 ] = None) -> TimelineOutput:
-    """Show how understanding of a topic has changed over time."""
+    """Show how understanding of a topic has changed over time. Returns all knowledge records
+   matching the topic sorted chronologically, including expired/superseded records."""
     return await _call_tool_result("memory_timeline", {"topic": topic, "scope": scope})
 
 
@@ -1719,7 +1805,9 @@ async def memory_contradictions(
         Field(description="When true, return corpus-wide audit stats ignoring resolved default scope. Default false — audit reads use the same resolved scope as recall/browse."),
     ] = False,
 ) -> ContradictionOutput:
-    """List detected contradictions from the audit log."""
+    """List detected contradictions from the audit log. Shows cases where knowledge records
+   contradicted each other during consolidation, including both the old and new content and how
+   it was resolved."""
     payload: dict[str, object] = {"topic": topic, "scope": scope}
     if global_scope:
         payload["global_scope"] = True
@@ -1731,7 +1819,8 @@ async def memory_browse(scope: Annotated[
     ScopeInput,
     Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
 ] = None) -> BrowseOutput:
-    """Browse all knowledge topics with summaries and metadata."""
+    """Browse all knowledge topics with summaries and metadata. Returns titles, summaries, record
+   counts by type, confidence scores, and file paths."""
     return await _call_tool_result("memory_browse", {"scope": scope})
 
 
@@ -1746,13 +1835,15 @@ async def memory_read_topic(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> TopicDetailOutput:
-    """Read the full markdown content of a knowledge topic."""
+    """Read the full markdown content of a knowledge topic. Use memory_browse first to see
+   available topics."""
     return await _call_tool_result("memory_read_topic", {"filename": filename, "scope": scope})
 
 
 @_tracked_tool()
 async def memory_hygiene_scan() -> HygieneScanOutput:
-    """Scan the corpus for noisy episodes and orphaned active claims."""
+    """Read-only corpus hygiene report: noisy episode candidates, orphaned active claims, and stale
+   episode sources. Use before batch cleanup."""
     return await _call_tool_result("memory_hygiene_scan", {})
 
 
@@ -1775,7 +1866,8 @@ async def memory_hygiene_apply(
         Field(description="Preview actions without mutating the corpus."),
     ] = False,
 ) -> HygieneApplyOutput:
-    """Apply corpus hygiene cleanup (forget episodes, optionally expire orphans)."""
+    """Apply corpus hygiene: forget selected or recommended noisy episodes and optionally expire
+   orphaned claims. Irreversible unless dry_run=true."""
     payload: dict[str, object] = {
         "use_recommended": use_recommended,
         "expire_orphans": expire_orphans,
@@ -1788,7 +1880,7 @@ async def memory_hygiene_apply(
 
 @_tracked_tool()
 async def memory_policy_list() -> PolicyListOutput:
-    """List persisted access policies and ACL bindings."""
+    """List persisted namespace/project access policies and ACL bindings. Use to inspect who can read or write memory in self-hosted deployments. Like scope discovery, this listing is deployment-wide: it is NOT filtered by read_visibility or the caller's scope, so it names every persisted binding, including principals the caller cannot read into."""
     return await _call_tool_result("memory_policy_list", {})
 
 
@@ -1803,7 +1895,7 @@ async def memory_scope_list(
         Field(description="0-based offset into the ordered scope list for page iteration; combine with limit."),
     ] = 0,
 ) -> ScopeListOutput:
-    """Discover which scopes exist: lists every scope that has stored data, with per-table usage counts and a canonical scope envelope you can pass back as the scope argument of other tools."""
+    """Discover which scopes exist: lists every scope that has stored data, with per-table usage counts and a canonical scope envelope you can pass back as the scope argument of other tools. Counts cover live rows only. This listing is deployment-wide: it is a topology audit, intentionally NOT filtered by read_visibility, policy or the caller's scope, so it names every scope that holds data. No content is read through it. Keep the MCP subprocess off untrusted multi-tenant deployments without OS-level isolation."""
     return await _call_tool_result("memory_scope_list", {"limit": limit, "offset": offset})
 
 
@@ -1831,7 +1923,8 @@ async def memory_policy_grant(
         Field(description="Read visibility policy for the principal."),
     ] = None,
 ) -> PolicyGrantOutput:
-    """Create or update a persisted policy ACL binding."""
+    """Create or update a persisted ACL binding for a principal. Omitted namespace or project
+   selectors act as wildcards. Provide at least one of write_mode or read_visibility."""
     payload: dict[str, object] = {
         "principal_type": principal_type,
         "principal_key": principal_key,
@@ -2008,6 +2101,7 @@ def _verify_published_argument_contract() -> None:
 
 _publish_and_verify_output_schemas()
 _verify_published_argument_contract()
+_verify_tool_descriptions()
 mcp_compat.install_list_tools_heal(mcp, _publish_output_schemas)
 
 
