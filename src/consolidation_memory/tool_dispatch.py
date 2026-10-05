@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 import re
+import types
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -53,6 +55,84 @@ _CLIENTLESS_TOOLS = frozenset(
 
 def tool_requires_client(name: str) -> bool:
     return name not in _CLIENTLESS_TOOLS
+
+
+# ── Published input contract ────────────────────────────────────────────────
+# Every published input schema declares ``additionalProperties: false``, so an
+# argument the contract does not name is an error, never a silently dropped key.
+# MCP rejects unknown arguments at registration time (pydantic ``extra="forbid"``
+# on ``ArgModelBase`` in server.py) and surfaces them as ``ToolError``;
+# ``reject_unknown_arguments`` is the same check for the dispatch seam every
+# other surface shares (OpenAI dispatch, REST, desktop). The allowed set is read
+# from ``schemas.openai_tools`` — the published contract — rather than a second
+# hand-maintained table, and the MCP tool signatures publish the same argument
+# names, so both surfaces accept exactly the same keys.
+#
+# Transport-internal arguments: ``tool_adapter.inject_recall_deadline`` puts
+# ``_recall_deadline_monotonic`` into MCP/REST recall payloads so the recall
+# deadline survives the hop into dispatch, and no published schema declares it
+# (callers cannot set it themselves — MCP rejects it). The list is explicit, not
+# a "_ means internal" rule, so an undeclared ``_junk`` key is still rejected and
+# a newly injected internal key has to be declared here. These keys are checked
+# separately from the published set, so they are never double-counted.
+_INTERNAL_ARGUMENT_KEYS = frozenset({"_recall_deadline_monotonic"})
+_ARGUMENT_CONTRACT_HINT = (
+    "Extra inputs are not permitted; the published inputSchema for this tool "
+    "is the contract."
+)
+
+
+class ToolContractError(ValueError):
+    """A tool call violated the published input contract (unknown argument).
+
+    Subclasses ``ValueError`` so existing callers keep classifying it as an
+    input error (``rest._execute`` turns it into HTTP 422, ``server`` turns it
+    into ``isError`` with actionable text), while ``dispatch_tool_call`` can
+    re-raise it instead of returning a soft ``{"error": ...}`` payload that
+    reads like a successful call.
+    """
+
+
+@functools.cache
+def _published_argument_names() -> Mapping[str, frozenset[str]]:
+    # Imported lazily: schemas.py re-exports dispatch_tool_call from this module.
+    from consolidation_memory.schemas import openai_tools
+
+    return types.MappingProxyType(
+        {
+            tool["function"]["name"]: frozenset(
+                tool["function"]["parameters"].get("properties") or {}
+            )
+            for tool in openai_tools
+        }
+    )
+
+
+def accepted_argument_names(name: str) -> frozenset[str] | None:
+    """Published argument names for ``name``; ``None`` when the tool is unknown."""
+    return _published_argument_names().get(name)
+
+
+def reject_unknown_arguments(name: str, arguments: Mapping[str, object]) -> None:
+    """Raise :class:`ToolContractError` for arguments the published schema omits.
+
+    ``server.py`` currently owns the equivalent MCP-side check through
+    pydantic's ``extra="forbid"``; it should delegate here once this module is
+    reachable from the registration path, so both surfaces share one contract.
+    """
+    accepted = accepted_argument_names(name)
+    if accepted is None:
+        return  # unknown tool names fail later with "Unknown tool: <name>"
+    unknown = sorted(
+        str(key)
+        for key in arguments
+        if str(key) not in accepted and str(key) not in _INTERNAL_ARGUMENT_KEYS
+    )
+    if not unknown:
+        return
+    raise ToolContractError(
+        f"{name}: unknown argument(s) {', '.join(unknown)}. {_ARGUMENT_CONTRACT_HINT}"
+    )
 
 
 def _require_client(client: MemoryClient | None, name: str) -> MemoryClient:
@@ -402,7 +482,13 @@ def execute_tool_call(
     *,
     client: MemoryClient | None = None,
 ) -> dict[str, Any]:
-    """Execute a canonical tool call and return a JSON-serializable dict."""
+    """Execute a canonical tool call and return a JSON-serializable dict.
+
+    Raises :class:`ToolContractError` before touching the client when the
+    arguments carry keys the published ``inputSchema`` does not declare.
+    """
+    reject_unknown_arguments(name, arguments)
+
     if name == "memory_remember":
         from consolidation_memory.simple_api import build_remember_store_arguments
 
@@ -921,8 +1007,17 @@ def dispatch_tool_call(
     name: str,
     arguments: dict[str, Any],
 ) -> dict[str, Any]:
-    """OpenAI-style wrapper that returns error payloads instead of raising."""
+    """OpenAI-style wrapper that returns error payloads instead of raising.
+
+    Contract violations are the exception: an unknown argument never becomes a
+    soft ``{"error": ...}`` result, because a payload shaped like a successful
+    call hides the fact that the tool ran with different arguments than the
+    caller asked for (or did not run at all). ``ToolContractError`` propagates
+    so hosts see the same actionable rejection MCP reports via ``isError``.
+    """
     try:
         return execute_tool_call(name, arguments, client=client)
+    except ToolContractError:
+        raise
     except Exception as exc:
         return {"error": str(exc)}
