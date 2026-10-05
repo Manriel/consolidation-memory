@@ -4,9 +4,10 @@ Three graphical surfaces ship with the project. They are deliberately
 **curated subsets** of the tool surface — ask/remember/browse style reading
 and writing plus operational fix-it flows — while the full capability set
 lives behind MCP, REST, the Python SDK and the OpenAI schemas (see
-[CONTRIBUTING.md](../CONTRIBUTING.md) for the parity contract). All three
-reuse the same dispatch seams as those surfaces, so a `remember` from any
-GUI writes exactly the row an MCP call would write.
+[CONTRIBUTING.md](../CONTRIBUTING.md) for the parity contract). The browser and
+desktop GUIs reuse the same dispatch seam as those surfaces, so a `remember`
+from either writes exactly the row an MCP call would write; the TUI is read-only
+and never dispatches at all.
 
 | Surface | Command | Extra | Backend path | Best for |
 | --- | --- | --- | --- | --- |
@@ -43,7 +44,7 @@ time.
 | **Ask** | Plain-language question → `memory_ask` recall over episodes, topics, records and claims |
 | **Remember** | Capture a note/fix/fact/preference → `memory_remember` (kind, tags; an empty tag list becomes `ui`) |
 | **Browse** | Recent episodes and knowledge topics; delete an episode (→ `memory_forget`) |
-| **Health** | Status snapshot (last consolidation, FAISS/DB sizes, health note) with fix-it buttons: consolidate, warmup, reindex, install maintenance daemon |
+| **Health** | Overview payload (version, project, DB/FAISS stats, health note) plus collected warnings, each with a fix action: consolidate, warmup, reindex, install the maintenance daemon |
 | **Hygiene** | Corpus hygiene scan and cleanup (`memory_hygiene_scan` / `memory_hygiene_apply`) with dry-run awareness |
 | **Metrics** | Charts from `real_world_eval` — the bundled published bundle plus a live report when present (see [REAL_WORLD_METRICS.md](REAL_WORLD_METRICS.md)) |
 
@@ -103,16 +104,18 @@ consolidation-memory app --no-tray  # close app together with the window
 ```
 
 A PySide6 application with five tabs — **Ask · Remember · Browse · Health ·
-Hygiene** — and a system-tray icon (tray menu: open window, quit; closing
-the window hides to tray unless `--no-tray`).
+Hygiene** — and a system-tray icon whose menu offers Open, Run consolidation and
+Quit. Closing the window hides to tray with a notification; `--no-tray` makes
+the window close for real.
 
 `desktop_backend.py` backs it with two kinds of calls:
 
 - **reads** — `DashboardData` (direct SQLite, same as the TUI);
-- **writes and recall** — the shared `execute_tool_call` dispatch
-  (`memory_ask`, `memory_remember`, `memory_consolidate`,
-  `memory_forget`), so results and policies match every other surface;
-  desktop remembers default to the `desktop` tag.
+- **writes, recall and maintenance** — the shared `execute_tool_call` dispatch
+  (`memory_ask`, `memory_remember`, `memory_consolidate`, `memory_forget`,
+  `memory_status`, `memory_hygiene_scan`, `memory_hygiene_apply`), so results and
+  policies match every other surface; desktop remembers default to the `desktop`
+  tag.
 
 Heavy work runs on background `QThread` workers, so the window never blocks
 on consolidation or recall.
@@ -142,4 +145,4 @@ Consequences worth knowing:
 - [README — extras table](../README.md#install-and-try-it)
 - [MCP guide](MCP_GUIDE.md) — agent-facing surfaces
 - [Real-world metrics](REAL_WORLD_METRICS.md) — data behind the Metrics tab
-- [Roadmap](ROADMAP.md) — how the three surfaces were shipped
+- [Roadmap](ROADMAP.md) — where the three surfaces sit

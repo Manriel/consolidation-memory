@@ -12,7 +12,7 @@ pip install -e ".[all,dev]"
 If you only need the local-first default stack, this is enough:
 
 ```bash
-pip install consolidation-memory[fastembed]
+pip install "consolidation-memory[fastembed]"
 ```
 
 Examples in this directory:
@@ -24,7 +24,7 @@ Examples in this directory:
 - `cursor-integration/`
   - Drop-in MCP config for Cursor.
 - `continue-dev/`
-  - Continue/Continue.dev MCP config.
+  - Drop-in MCP config for Continue.
 - `langgraph-memory-node/`
   - LangGraph node example that reads from `MemoryClient`.
 - `plugins/`
@@ -36,7 +36,9 @@ Notes:
 
 - MCP configs use an exact Python interpreter path on purpose. That is more
   reliable than relying on a shell-installed console script.
-- If you want examples to write into a dedicated project, set
-  `CONSOLIDATION_MEMORY_PROJECT` before running them.
+- Set `CONSOLIDATION_MEMORY_PROJECT` to point the examples at a dedicated
+  project instead of your active one. The `trust-vs-rag` demo is the exception:
+  it builds a throwaway data dir and git repo of its own.
 - The plugin example is easiest to use from the repository root so Python can
   import `examples.plugins.*` directly.
+- `rest-api/client.py` imports `httpx`, which no project extra provides.

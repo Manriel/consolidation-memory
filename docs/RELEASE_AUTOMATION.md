@@ -21,7 +21,9 @@ Flow:
    - The suite's `tests/test_tool_reference_sync.py` fails when the committed `docs/TOOLS.md` is stale, and the release quality gates run that suite.
 3. `release-on-main.yml` evaluates commits since the latest tag.
 4. If eligible, it runs `scripts/release.py --bump <major|minor|patch>`.
-5. The script bumps `pyproject.toml`, promotes `## Unreleased` into a versioned entry (or falls back to git commits since the tag), commits, tags (`vX.Y.Z`), and pushes.
+5. The script bumps `pyproject.toml`, promotes the `## Unreleased` bullets into
+   a versioned entry (falling back to the commit subjects since the previous tag
+   when that section is empty), commits, tags (`vX.Y.Z`), and pushes.
 6. The tag triggers `publish.yml`, which runs full gates and publishes release artifacts.
 
 ## Quick Setup Checklist
@@ -35,8 +37,8 @@ Do this once per repository:
    - Push a conventional commit (for example `fix: ...`) to `main`.
    - Confirm `Update Changelog On Main` commits an updated `## Unreleased` section when needed.
 5. Verify release automation:
-   - Trigger `workflow_dispatch` on `Automated Release On Main` with `patch`, `minor`, or `major`, or
-   - Push another releasable conventional commit and wait for the release job.
+   - Push another releasable conventional commit and wait for the release job, or
+   - `workflow_dispatch` `Automated Release On Main` with a forced bump (see [Manual Override](#manual-override)).
 
 If both workflows run successfully, setup is complete.
 
@@ -78,16 +80,17 @@ python scripts/update_changelog.py --limit 400
 python scripts/release.py --bump minor --limit 400
 ```
 
-200 is a runaway guard, not a routine filter: the largest tag-to-tag range in
-this repository's history is 24 commits (`v0.19.0`..`v0.20.0`), and 200
-bullets is only a few kilobytes of Markdown. The previous default of 20 sat
-below real range sizes and silently dropped the oldest entries of any busy
-release.
+200 is a runaway guard, not a routine filter. The largest tag-to-tag range in this
+repository's history is 24 commits (`v0.19.0..v0.20.0`), and 200 bullets is a few
+kilobytes of Markdown — roughly 7x headroom. Recompute the range with
+`git rev-list --count <previous-tag>..<tag>` across `git tag | sort -V`; if it
+approaches the default, raise `DEFAULT_SUBJECT_LIMIT` in
+`scripts/changelog_builder.py`.
 
 ### What is dropped first
 
-When a range exceeds the limit, entries are ranked before the cut. The surviving
-order is newest-first, as before, but the selection is not:
+When a range exceeds the limit, entries are ranked before the cut. Survivors
+keep newest-first order; selection is:
 
 - **Kept first** — `feat:`, `fix:`, `perf:`, `security:`, `revert:`, breaking
   subjects (`type(scope)!:`), unclassifiable subjects, and any dependency-scope
@@ -118,12 +121,12 @@ report to **stderr** and add a `::warning::` annotation when running under GitHu
 Actions. Nothing is written into `CHANGELOG.md`.
 
 ```text
-[changelog] WARNING: Changelog truncated: kept 8 of 23 releasable commits (limit 8).
-[changelog] WARNING: Dropped 15 entries: 15 internal (docs/chore/test/ci/refactor/style/build) and 0 user-visible (feat/fix/perf/security/breaking).
+[changelog] WARNING: Changelog truncated: kept 8 of 22 releasable commits (limit 8).
+[changelog] WARNING: Dropped 14 entries: 14 internal (docs/chore/test/ci/refactor/style/build) and 0 user-visible (feat/fix/perf/security/breaking).
 [changelog] WARNING: No user-visible change was lost; only maintainer-facing entries were dropped.
 [changelog] WARNING: Re-run with a higher limit (for example --limit 200) to keep every entry.
 [changelog] WARNING: Dropped entries:
-[changelog] WARNING:   - docs: rebuild the README around the knowledge-layer story 14
+[changelog] WARNING:   - docs: doc C
 ...
 ```
 
@@ -132,9 +135,9 @@ small `--limit` never suggests going *below* the default.
 
 When user-visible changes *are* dropped, the report says so explicitly
 (`User-visible changes were dropped (oldest first). Raise the limit before
-releasing.`) and lists the lost subjects. Every run also prints a
-`[changelog] NOTE:` line naming how many merge, release, `[skip release]`, and
-duplicate commits were skipped.
+releasing.`) and lists the lost subjects. A run that skipped merge, release,
+`[skip release]` or duplicate commits also prints a `[changelog] NOTE:` line with
+those counts.
 
 **Before releasing** with a warning in the log, re-run with the suggested
 `--limit` value (or edit the `## Unreleased` section by hand) so no change ships
@@ -142,24 +145,25 @@ undocumented.
 
 ## Criteria
 
-The criteria engine is deterministic:
+`scripts/release_criteria.py` is deterministic and reads the commits since the
+latest tag, newest first:
 
-1. Head commit contains `[skip release]` -> no release.
-2. Head commit contains `[release major|minor|patch]` (or `[bump ...]`) -> forced bump.
-3. Otherwise, scan commits since latest tag:
-- Breaking change (`!` in conventional subject or `BREAKING CHANGE` in body) -> `major`.
-- `feat:` -> `minor`.
-- `fix:`, `perf:`, `refactor:`, `revert:`, `security:` -> `patch`.
-- `docs:`, `chore:`, `ci:`, `test:`, `build:`, `style:` only -> no release.
+1. Head commit contains `[skip release]` or `[release skip]` → no release.
+2. Head commit contains `[release major|minor|patch]` (or `[bump …]`) → forced bump.
+3. Otherwise, the highest signal across the range wins:
+   - breaking change (`!` in the conventional subject, or `BREAKING CHANGE` in
+     the body) → `major`;
+   - `feat:` → `minor`;
+   - `fix:`, `perf:`, `refactor:`, `revert:`, `security:` → `patch`;
+   - only `docs:`, `chore:`, `ci:`, `test:`, `build:`, `style:` (or
+     unparseable subjects) → no release.
 
 ## Required Repository Secret
 
-Set repository secret:
-
-- `RELEASE_AUTOMATION_PAT`
-
-Use a PAT that can push commits and tags to this repository (`repo` scope for classic PAT).
-This is required so tag pushes can trigger downstream workflows reliably.
+`RELEASE_AUTOMATION_PAT` must be able to push commits and tags to this
+repository (`repo` scope for a classic PAT). Both `changelog-on-main.yml` and
+`release-on-main.yml` check out with it, and a PAT-authorized tag push is what
+triggers `publish.yml` reliably.
 
 ## Troubleshooting
 
@@ -167,7 +171,8 @@ This is required so tag pushes can trigger downstream workflows reliably.
 
 Symptoms:
 
-- `release_skipped_missing_pat` job runs.
+- `release_skipped_missing_pat` job runs, logging
+  `Release criteria matched but RELEASE_AUTOMATION_PAT is not configured.`
 - `release` job is skipped.
 
 Fix:
@@ -198,21 +203,29 @@ Symptoms:
 
 Cause:
 
-- An older workflow reran `update_changelog.py --commit --push` after step 1 had already written `CHANGELOG.md`.
+- `--commit` ran against a tree carrying changes other than `CHANGELOG.md`.
+  `changelog-on-main.yml` never calls it — the workflow runs the updater, then
+  commits with `git add` / `git commit` / `git push` — so a local two-step
+  (`update_changelog.py` then `update_changelog.py --commit`) is the usual
+  trigger.
 
 Fix:
 
-- Ensure `changelog-on-main.yml` commits via `git add` / `git commit` / `git push` after the refresh step, or run a single local `python scripts/update_changelog.py --commit --push` from a clean tree.
+- Stash or commit the other paths, then commit `CHANGELOG.md`. From a fully
+  clean tree, `python scripts/update_changelog.py --commit --push` is a single
+  step.
 
 ### Release docs guard failed in CI
 
 Symptoms:
 
 - `Release Docs Guard` fails with `Release automation files changed without docs updates`.
+- Or it fails with `docs/RELEASE_AUTOMATION.md is missing required markers: …` /
+  `README.md is missing the release automation documentation link.`
 
 Fix:
 
-- Update `docs/RELEASE_AUTOMATION.md` or `README.md` in the **same commit** whenever you change release automation scripts or workflows (`release-on-main.yml`, `changelog-on-main.yml`, `update_changelog.py`, etc.).
+- Update `docs/RELEASE_AUTOMATION.md` or `README.md` in the **same commit** whenever you change release automation scripts or workflows (`release-on-main.yml`, `changelog-on-main.yml`, `update_changelog.py`, `changelog_builder.py`, `release_criteria.py`, `generate_tool_reference.py`). The guard also requires the file `(docs/RELEASE_AUTOMATION.md)` link in `README.md` and a set of required markers in this document.
 
 ### Changelog truncated warning in the log
 
@@ -231,44 +244,37 @@ Fix:
 2. Re-run with the suggested limit, for example `python scripts/update_changelog.py --limit 400` (or `python scripts/release.py --bump minor --limit 400`).
 3. If the warning says user-visible changes were dropped, do not release until they appear in `## Unreleased` — re-run with the higher limit, or add the missing bullets by hand.
 
-### How to force one release now
+## Manual Override
 
-Use `workflow_dispatch` on `Automated Release On Main` and select:
-
-- `patch`
-- `minor`
-- `major`
-
-This bypasses auto detection for that run only.
+`Automated Release On Main` takes a `workflow_dispatch` `bump` input —
+`auto` (default), `patch`, `minor`, `major`. Anything but `auto` sets
+`should_release=true` with that bump and skips criteria detection for that run
+only. Requires `RELEASE_AUTOMATION_PAT`; without it the run lands in
+`release_skipped_missing_pat`.
 
 ## Guardrails
 
 - The automation no-ops when no releasable commits exist.
-- The release commit/tag itself does not re-trigger a second release, because there are no commits past the new tag.
-- Stable release publishing remains gated by `publish.yml` quality + novelty checks.
+- The release commit/tag itself does not re-trigger a second release, because
+  the tag commit carries no releasable subject and the release is scoped to the
+  range since the previous tag.
+- Stable release publishing remains gated by `publish.yml` quality + novelty
+  checks.
 - The MCP wire contract is gated separately, by `scripts/smoke_mcp_stdio.py` in
-  the `Tests` workflow (3.13/ubuntu): it asserts the negotiated protocol
-  version, that every tool publishes both `outputSchema` arms, the tool
-  name/count set, and that an unknown argument is rejected with `isError: true`.
-  `publish.yml` does **not** re-run it, so a release can only ship what already
-  passed `Tests` on the commit it tags.
+  the `Tests` workflow (3.13/ubuntu only): 8 checks — the negotiated protocol
+  version, both `outputSchema` arms per tool, the tool name/count set, clean
+  `memory_status` / `memory_recall` frames, a non-ASCII round trip, and unknown
+  arguments rejected with `isError: true`. `publish.yml` does **not** re-run it,
+  so a release ships only what already passed `Tests` on the tagged commit.
 - `ruff` is pinned to `>=0.7.0,<0.17` with an explicit rule set in
-  `pyproject.toml`; both workflows lint `src/` and `tests/`. `scripts/` is
-  linted locally and by `scripts/pre_push_check.py`, so the release tooling
-  ships clean without being a CI gate.
-
-## Manual Override
-
-`release-on-main.yml` also supports `workflow_dispatch` with optional forced bump:
-
-- `patch`
-- `minor`
-- `major`
+  `pyproject.toml`. `Tests` and `Publish to PyPI` both lint `src/` and `tests/`.
+  `scripts/` is linted by `scripts/pre_push_check.py` (and locally), so the
+  release tooling ships clean without being a CI gate.
 
 ## Operational Notes
 
-- Commit directive `[skip release]` on the head commit suppresses release.
-- Commit directive `[release major|minor|patch]` (or `[bump ...]`) on the head commit forces a bump.
-- Release commit/tag pushes trigger downstream workflows:
-  - `Tests` on `main`
-  - `Publish to PyPI` on tag `v*`
+- A push to `main` runs `Update Changelog On Main`, `Automated Release On Main`,
+  `Tests` and `Release Docs Guard`; a `v*` tag runs `Publish to PyPI`. The
+  release bot skips the two `main` automation workflows to avoid loops.
+- `Release Docs Guard` triggers on the release-automation files themselves plus
+  `docs/RELEASE_AUTOMATION.md` and `README.md`, on both push and pull request.
