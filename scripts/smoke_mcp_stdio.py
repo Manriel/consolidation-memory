@@ -283,10 +283,13 @@ def _check_non_ascii_round_trip(
     3. the raw frame carries ``structuredContent`` as raw UTF-8 rather than
        ``\\\\uXXXX`` escapes.
 
-    The text frame's own JSON encoding is produced by the ``mcp`` library
-    (``json.dumps(..., indent=2)``, ``ensure_ascii=True``), so the escape
-    sequences inside that nested string are the library's, not this package's;
-    guarantee 3 is what covers this package's side of the wire.
+    Both channels are encoded by the ``mcp`` library through pydantic
+    (``pydantic_core.to_json(..., indent=2)`` builds the text frame), which emits
+    non-ASCII as raw UTF-8, so neither channel introduces ``\\\\uXXXX`` escaping and
+    the literal ``\\\\u0393`` text stays the six characters it was stored as. The text
+    frame sits one JSON encoding layer deeper, because the payload is a string
+    nested inside the outer frame; that layer escapes backslashes and newlines,
+    not characters, so both channels decode to the same bytes.
     """
     store_result = _result(store()[0], "store")
     if store_result.get("isError"):

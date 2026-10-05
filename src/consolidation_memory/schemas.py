@@ -1069,7 +1069,12 @@ MEMORY_SCOPE_LIST_SCHEMA: dict[str, Any] = {
         "description": (
             "Discover which scopes exist: lists every scope that has stored data, "
             "with per-table usage counts and a canonical scope envelope you can "
-            "pass back as the scope argument of other tools."
+            "pass back as the scope argument of other tools. Counts cover live "
+            "rows only. This listing is deployment-wide: it is a topology audit, "
+            "intentionally NOT filtered by read_visibility, policy or the caller's "
+            "scope, so it names every scope that holds data. No content is read "
+            "through it. Keep the MCP subprocess off untrusted multi-tenant "
+            "deployments without OS-level isolation."
         ),
         "parameters": {
             "type": "object",

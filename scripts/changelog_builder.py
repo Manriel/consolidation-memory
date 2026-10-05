@@ -12,13 +12,12 @@ from typing import IO
 
 # Maximum number of changelog bullets kept per release.
 #
-# The cap must not bite on a realistic release range. The largest range in this
-# repository's history is 27 commits (v0.20.3 -> 0.21.0), releases run every few
-# days, and 200 bullets is only a few kilobytes of Markdown, so 200 leaves roughly
-# 7x headroom over the largest observed range. Its job is to bound a pathological
-# squash/merge (a thousand-commit vendored import), not to filter normal work.
-# The previous value of 20 sat below real range sizes and silently dropped the
-# oldest entries - including user-visible `feat:`/`fix:` commits - with no warning.
+# The cap must not bite on a realistic release range. The largest range between
+# consecutive tags in this repository's history is 24 commits
+# (v0.19.0 -> v0.20.0), releases run every few days, and 200 bullets is only a few
+# kilobytes of Markdown, so 200 leaves roughly 8x headroom over the largest
+# observed range. Its job is to bound a pathological squash/merge (a
+# thousand-commit vendored import), not to filter normal work.
 DEFAULT_SUBJECT_LIMIT = 200
 
 # Commits that only matter to maintainers. They are the first entries dropped when
