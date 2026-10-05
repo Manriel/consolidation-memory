@@ -2,24 +2,6 @@
 
 ## Unreleased
 
-### Breaking Changes
-
-- MCP tool results are no longer wrapped: `structuredContent` is the payload object itself, and the `content` text block is that object's JSON serialization. The `{"result": ...}` wrapper is gone, so hosts must stop reading `["result"]`.
-- Unknown tool arguments are errors, not ignored. MCP answers `isError: true`, REST answers HTTP 422 naming the offending keys, and the OpenAI/dispatch path raises before the tool body runs; callers that passed extra keys and relied on them being dropped must remove them.
-- `memory_hygiene_apply` reports `status: "applied"` instead of `"ok"`, and always returns `episode_ids`, `forgotten` and `not_found`; both modes emit the same key set.
-- The `mcp` dependency floor moves to `mcp[cli]>=2.3.0,<3` and the SDK entry point is now `MCPServer` instead of `FastMCP`. Installations pinned to an older SDK must upgrade.
-- These ship as a minor under the 0.x policy, so the supported security line moves to the new minor (`SECURITY.md`).
-
-### Changed
-
-- unknown-argument rejection is enforced from one shared allowed-argument set derived from the published `inputSchema`; MCP, REST and the OpenAI/dispatch path accept exactly the same keys, and startup fails if the SDK-enforced set diverges from it
-- REST request models reject unknown body keys and name the offending keys; nested episode and outcome objects stay permissive
-- `memory_scope_list` groups on all 11 canonical scope keys instead of 6, so scopes differing only by `namespace_sharing_mode`, `app_client_provider`, `app_client_external_key`, `agent_name` or `session_kind` are listed separately instead of merged
-- `memory_scope_list` counts only live rows: `episodes` and `knowledge_records` filter `deleted = 0`, while `knowledge_topics` has no soft-delete column and is counted as stored
-- `memory_scope_list` display metadata is picked deterministically with `MAX(col)` instead of read off an arbitrary group row, and the payload no longer carries `namespace.display_name` (the `scope` argument still accepts it)
-- every tool now publishes one description, from `schemas.openai_tools`, on MCP and on the OpenAI-compatible schemas
-- the drift worker subprocess runs on the server's own interpreter instead of the base interpreter behind a virtualenv symlink, and gets `PYTHONPATH` forwarded
-
 ### Features
 
 - feat(scripts): generate the MCP tool reference
@@ -33,11 +15,11 @@
 - fix(mcp): publish one tool description on every surface
 - fix(mcp): state that scope discovery is unfiltered in the published description
 - fix(mcp): enforce the input contract on REST and pin it to the SDK
+- fix(release): stop changelog truncation from hiding user-visible changes
 - fix(mcp): enforce the published input contract on the dispatch path
 - fix(mcp): isolate private SDK surfaces and make outputSchema publication self-healing
 - fix(db): correct scope discovery identity, liveness and metadata
 - fix(drift): keep the drift worker on the server's own interpreter
-- fix(release): stop changelog truncation from hiding user-visible changes
 - fix(mcp): repair memory_hygiene_apply applied payload and its contract
 - fix(cli): correct the policy grant principal-type help
 - fix(ci): clear ruff and mypy gates for release
@@ -50,6 +32,7 @@
 
 ### Documentation
 
+- docs(changelog): regenerate Unreleased and keep the upgrade-critical prose
 - docs: record the description single-source and close its debt item
 - docs: correct four stale claims and document the package root
 - docs: reconcile the reader docs with the code as it stands
