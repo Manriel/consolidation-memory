@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -15,20 +16,63 @@ from pathlib import Path
 from consolidation_memory.types import DriftOutput
 
 
+def _absolute_without_resolving(path: str) -> Path:
+    """Make ``path`` absolute while keeping symlinks intact.
+
+    ``Path.resolve()`` must not be used here: a virtualenv layout
+    (``.venv/bin/python -> python3.14 -> /usr/bin/python3.14``) resolves straight
+    through the environment to the base interpreter, which has a different
+    ``site-packages`` and usually no distribution metadata.
+    """
+    return Path(path).expanduser().absolute()
+
+
+def _package_root() -> str:
+    """Directory that must be importable for the child to find the package."""
+    return str(_absolute_without_resolving(__file__).parent.parent)
+
+
 def _resolve_python_executable() -> str:
+    """Return the interpreter the server itself runs on.
+
+    The drift worker must use the same environment as the server, otherwise it
+    can import a different dependency set. Resolving symlinks would collapse a
+    virtualenv down to its base interpreter, so the path is only made absolute.
+    """
     executable = (sys.executable or "").strip()
     if executable:
-        resolved = Path(executable).expanduser().resolve()
-        if resolved.exists():
-            return str(resolved)
+        candidate = _absolute_without_resolving(executable)
+        if candidate.exists():
+            return str(candidate)
 
     discovered = shutil.which("python")
     if discovered:
-        return str(Path(discovered).expanduser().resolve())
+        return str(_absolute_without_resolving(discovered))
 
     raise RuntimeError(
         "Unable to locate a Python executable for isolated drift detection."
     )
+
+
+def _build_child_env() -> dict[str, str]:
+    """Environment for the worker: parent environment plus a usable import path.
+
+    The parent environment is inherited unchanged, as before; only ``PYTHONPATH``
+    gains the directory that makes ``consolidation_memory`` importable, so the
+    child can import the same sources the server is running.
+    """
+    env = dict(os.environ)
+    inherited = env.get("PYTHONPATH", "").strip()
+    candidates = [_package_root(), *inherited.split(os.pathsep)]
+
+    deduped: list[str] = []
+    for entry in candidates:
+        entry = entry.strip()
+        if entry and entry not in deduped:
+            deduped.append(entry)
+
+    env["PYTHONPATH"] = os.pathsep.join(deduped)
+    return env
 
 
 def _build_drift_command(*, base_ref: str | None, repo_path: str | None) -> list[str]:
@@ -81,6 +125,7 @@ async def run_detect_drift_subprocess(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=cwd,
+        env=_build_child_env(),
     )
     try:
         stdout, stderr = await asyncio.wait_for(

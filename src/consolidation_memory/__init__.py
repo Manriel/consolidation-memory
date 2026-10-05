@@ -1,8 +1,21 @@
 """Consolidation Memory — engineering knowledge layer for agents."""
 
+from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
-__version__ = _pkg_version("consolidation-memory")
+# Sentinel used when the distribution metadata is unavailable, e.g. running from
+# a source checkout that was never installed, or from a subprocess whose
+# interpreter cannot see the dist-info. It stays a valid PEP 440 version so every
+# consumer that formats or reports ``__version__`` keeps working, and it sorts
+# below every real 0.x release so it can never masquerade as a newer build.
+_UNKNOWN_VERSION = "0.0.0"
+
+try:
+    __version__ = _pkg_version("consolidation-memory")
+except PackageNotFoundError:
+    # Only a missing distribution is tolerated; any other lookup failure is a
+    # real error and must stay visible.
+    __version__ = _UNKNOWN_VERSION
 
 # Lazy imports to avoid pulling in heavy deps (faiss, numpy) on bare import.
 _LAZY_IMPORTS = {
