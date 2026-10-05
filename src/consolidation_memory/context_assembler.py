@@ -174,7 +174,7 @@ def _tag_overlap_multiplier(query: str, episode: dict) -> float:
     tags = {str(t).strip().lower() for t in parse_json_list(episode.get("tags", "[]")) if str(t).strip()}
     if not tags:
         return 1.0
-    query_words = {word for word in re.findall(r"[a-z0-9_]{4,}", str(query).lower())}
+    query_words = set(re.findall(r"[a-z0-9_]{4,}", str(query).lower()))
     overlap = query_words & tags
     if not overlap:
         return 1.0
@@ -1083,14 +1083,14 @@ def recall(
     candidates = vector_store.search(query_vec, k=fetch_k)
 
     # Build cosine similarity map from FAISS results
-    cosine_map: dict[str, float] = {eid: sim for eid, sim in candidates}
+    cosine_map: dict[str, float] = dict(candidates)
 
     # FTS5 keyword search (hybrid)
     bm25_map: dict[str, float] = {}
     _hybrid = cfg.HYBRID_SEARCH_ENABLED and fts_available()
     if _hybrid:
         fts_results = fts_search(query, limit=cfg.HYBRID_FTS_CANDIDATES)
-        bm25_map = {eid: score for eid, score in fts_results}
+        bm25_map = dict(fts_results)
 
     # Merge candidate IDs from vector, FTS, and entity linkage
     entity_episode_ids = (

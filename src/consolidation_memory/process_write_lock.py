@@ -7,7 +7,7 @@ import os
 import sys
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -63,12 +63,12 @@ class ProcessWriteLease:
                 try:
                     _try_lock_file(handle)
                     break
-                except OSError:
+                except OSError as err:
                     if time.monotonic() >= deadline:
                         raise TimeoutError(
                             "Timed out waiting for write lease at "
                             f"{self._lock_path} after {self._timeout_seconds:.1f}s"
-                        )
+                        ) from err
                     time.sleep(0.05)
 
             waited = time.monotonic() - started
@@ -80,10 +80,9 @@ class ProcessWriteLease:
                 handle.truncate()
                 handle.write(payload.encode("utf-8"))
                 handle.flush()
-                try:
+                # Best-effort durability: fsync is unsupported on some filesystems.
+                with suppress(OSError):
                     os.fsync(handle.fileno())
-                except OSError:
-                    pass
                 yield
             finally:
                 _unlock_file(handle)

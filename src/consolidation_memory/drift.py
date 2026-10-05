@@ -324,7 +324,10 @@ def _detect_code_drift_once(
     repo_dir: Path,
     scope: Mapping[str, Any] | None,
 ) -> DriftOutput:
-    from consolidation_memory.database import insert_claim_events, mark_claims_challenged_by_ids
+    from consolidation_memory.database import (
+        insert_claim_events,
+        mark_claims_challenged_by_ids,
+    )
 
     changed_files = get_changed_files(base_ref=base_ref, repo_path=repo_dir)
 

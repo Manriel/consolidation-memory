@@ -14,7 +14,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from consolidation_memory.corpus_hygiene import apply_corpus_hygiene, scan_corpus_hygiene
+from consolidation_memory.corpus_hygiene import (
+    apply_corpus_hygiene,
+    scan_corpus_hygiene,
+)
 from consolidation_memory.dashboard_data import DashboardData
 from consolidation_memory.maintenance import reindex_all_episodes, warmup_recall_caches
 from consolidation_memory.setup_service import assess_setup_status, run_quick_setup

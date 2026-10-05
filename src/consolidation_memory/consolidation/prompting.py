@@ -364,13 +364,13 @@ def _embedding_text_for_record(record: dict) -> str:
     rtype = record.get("type", "fact")
     if rtype == "fact":
         return f"{record.get('subject', '')}: {record.get('info', '')}"
-    elif rtype == "solution":
+    if rtype == "solution":
         return f"Problem: {record.get('problem', '')}. Fix: {record.get('fix', '')}"
-    elif rtype == "preference":
+    if rtype == "preference":
         return f"Preference {record.get('key', '')}: {record.get('value', '')}"
-    elif rtype == "procedure":
+    if rtype == "procedure":
         return f"Procedure: {record.get('trigger', '')} -> {record.get('steps', '')}"
-    elif rtype == "strategy":
+    if rtype == "strategy":
         return (
             f"Strategy for {record.get('problem_pattern', '')}: {record.get('strategy', '')}. "
             f"Preconditions: {record.get('preconditions', '')}. "

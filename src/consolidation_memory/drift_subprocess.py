@@ -7,6 +7,7 @@ or poisoned in-process state after prior timeouts.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import shutil
@@ -133,10 +134,9 @@ async def run_detect_drift_subprocess(
             timeout=max(0.001, float(timeout_seconds)),
         )
     except asyncio.TimeoutError:
-        try:
+        # The process already exited; killing it is a no-op.
+        with contextlib.suppress(ProcessLookupError):
             proc.kill()
-        except ProcessLookupError:
-            pass
         await proc.wait()
         raise
 
@@ -164,7 +164,9 @@ async def run_detect_drift_subprocess(
         ) from exc
 
     if not isinstance(payload, dict):
-        raise RuntimeError("Isolated drift detection output must be a JSON object.")
+        raise RuntimeError(  # noqa: TRY004 - payload shape assertion, not an argument validator
+            "Isolated drift detection output must be a JSON object."
+        )
 
     return payload  # type: ignore[return-value]
 

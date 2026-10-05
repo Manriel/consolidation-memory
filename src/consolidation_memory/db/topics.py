@@ -323,7 +323,7 @@ def increment_topic_access_by_ids(topic_ids: list[str]) -> None:
             updated_at = ? WHERE id IN ({placeholders})"""
         conn.execute(
             query,
-            [_now()] + topic_ids,
+            [_now(), *topic_ids],
         )
 
 

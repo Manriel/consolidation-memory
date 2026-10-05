@@ -12,6 +12,7 @@ import concurrent.futures
 import functools
 import gc
 import hashlib
+import importlib
 import json
 import logging
 import math
@@ -23,7 +24,7 @@ import threading
 import time
 import traceback
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Annotated, Any, TypeAlias, TypeVar, cast
 
 from mcp.server import MCPServer
@@ -573,10 +574,9 @@ def _write_singleton_metadata(handle, metadata: dict[str, object]) -> None:
     handle.truncate()
     handle.write(json.dumps(metadata, sort_keys=True))
     handle.flush()
-    try:
+    # Best-effort durability: fsync is unsupported on some filesystems.
+    with suppress(OSError):
         os.fsync(handle.fileno())
-    except OSError:
-        pass
 
 
 def _process_exists(pid: int) -> bool:
@@ -758,8 +758,8 @@ def _preload_numeric_backends() -> None:
     if _PRELOAD_NUMERIC_BACKENDS_ON_START:
         started = time.monotonic()
         try:
-            import faiss  # noqa: F401
-            import numpy  # noqa: F401
+            importlib.import_module("faiss")
+            importlib.import_module("numpy")
         except Exception as exc:
             logger.warning("Numeric backend preload failed: %s", exc)
         else:
@@ -938,18 +938,16 @@ async def lifespan(server: MCPServer):
 
     if _idle_task is not None:
         _idle_task.cancel()
-        try:
+        # Awaiting a task we just cancelled: the cancellation is the expected outcome.
+        with suppress(asyncio.CancelledError):
             await _idle_task
-        except asyncio.CancelledError:
-            pass
         _idle_task = None
 
     if _warmup_task is not None:
         _warmup_task.cancel()
-        try:
+        # Awaiting a task we just cancelled: the cancellation is the expected outcome.
+        with suppress(asyncio.CancelledError):
             await _warmup_task
-        except asyncio.CancelledError:
-            pass
         _warmup_task = None
 
     _shutdown_warmup_executor()

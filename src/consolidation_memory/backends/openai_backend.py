@@ -20,9 +20,9 @@ class OpenAIEmbeddingBackend:
             from openai import OpenAI
         except ImportError:
             raise ImportError(
-                "openai is required for the openai backend. "
+                "openai is required for the openai embedding backend. "
                 "Install it with: pip install consolidation-memory[openai]"
-            )
+            ) from None
         kwargs: dict[str, str] = {"api_key": api_key}
         if api_base:
             kwargs["base_url"] = api_base
@@ -74,7 +74,7 @@ class OpenAILLMBackend:
             raise ImportError(
                 "openai is required for the openai LLM backend. "
                 "Install it with: pip install consolidation-memory[openai]"
-            )
+            ) from None
         kwargs: dict[str, str] = {"api_key": api_key}
         if api_base:
             kwargs["base_url"] = api_base

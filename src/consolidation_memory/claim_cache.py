@@ -12,7 +12,9 @@ import threading
 
 import numpy as np
 
-from consolidation_memory.embedding_disk_cache import clear_namespace as _clear_disk_namespace
+from consolidation_memory.embedding_disk_cache import (
+    clear_namespace as _clear_disk_namespace,
+)
 from consolidation_memory.embedding_disk_cache import embed_items_incremental
 from consolidation_memory.query_semantics import parse_claim_payload
 

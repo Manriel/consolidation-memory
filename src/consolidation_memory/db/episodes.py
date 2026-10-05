@@ -261,7 +261,7 @@ def increment_access(episode_ids: list[str]) -> None:
             updated_at = ? WHERE id IN ({placeholders})"""
         conn.execute(
             query,
-            [_now()] + episode_ids,
+            [_now(), *episode_ids],
         )
 
 
@@ -276,7 +276,7 @@ def mark_consolidated(episode_ids: list[str], topic_filename: str) -> None:
             WHERE id IN ({placeholders})"""
         conn.execute(
             query,
-            [now, topic_filename, now] + episode_ids,
+            [now, topic_filename, now, *episode_ids],
         )
 
 
@@ -290,7 +290,7 @@ def mark_pruned(episode_ids: list[str]) -> None:
             WHERE id IN ({placeholders}) AND consolidated = 1"""
         conn.execute(
             query,
-            [now] + episode_ids,
+            [now, *episode_ids],
         )
 
 

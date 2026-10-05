@@ -14,7 +14,9 @@ import threading
 import numpy as np
 
 from consolidation_memory.database import get_all_knowledge_topics
-from consolidation_memory.embedding_disk_cache import clear_namespace as _clear_disk_namespace
+from consolidation_memory.embedding_disk_cache import (
+    clear_namespace as _clear_disk_namespace,
+)
 from consolidation_memory.embedding_disk_cache import embed_items_incremental
 
 logger = logging.getLogger(__name__)

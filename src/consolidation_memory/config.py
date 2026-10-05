@@ -726,9 +726,10 @@ def set_active_project(name: str | None = None) -> str:
     try:
         from consolidation_memory.database import close_thread_local_connection
         close_thread_local_connection()
-    except Exception:
-        # Keep project switching resilient even if DB module isn't initialized.
-        pass
+    except ImportError as exc:
+        # Switching projects must work before the DB layer exists. Anything else
+        # escaping here is a genuine failure and is left to surface.
+        _logging.getLogger(__name__).debug("DB layer not initialized, connections kept: %s", exc)
     return cfg.active_project
 
 

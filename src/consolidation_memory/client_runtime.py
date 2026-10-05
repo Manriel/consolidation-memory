@@ -5,6 +5,7 @@ Keeps scheduling/health orchestration isolated from CRUD-facing client logic.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import threading
@@ -243,7 +244,9 @@ def check_embedding_backend(client: RuntimeClient) -> None:
             body_raw = resp.read()
         body = json.loads(body_raw)
         if not isinstance(body, Mapping):
-            raise ValueError("response body must be a JSON object")
+            raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+                "response body must be a JSON object"
+            )
 
         if cfg.EMBEDDING_BACKEND == "ollama":
             models = body.get("models", [])
@@ -330,7 +333,9 @@ def compute_consolidation_utility(
 ) -> dict[str, object]:
     """Compute current utility score and signal breakdown."""
     from consolidation_memory.config import get_config
-    from consolidation_memory.consolidation.utility_scheduler import compute_utility_score
+    from consolidation_memory.consolidation.utility_scheduler import (
+        compute_utility_score,
+    )
     from consolidation_memory.database import (
         count_active_challenged_claims,
         count_contradictions_since,
@@ -639,10 +644,9 @@ def submit_auto_consolidation(
                 except Exception:
                     logger.exception("Failed to release scheduler lease after submit failure")
             if client._consolidation_lock.locked():
-                try:
+                # Guarded by locked(); a racing release already dropped the lock.
+                with contextlib.suppress(RuntimeError):
                     client._consolidation_lock.release()
-                except RuntimeError:
-                    pass
 
 
 def finalize_auto_consolidation(
@@ -697,10 +701,9 @@ def finalize_auto_consolidation(
                 logger.exception("Failed to release scheduler lease after completion failure")
         client._consolidation_future = None
         if client._consolidation_lock.locked():
-            try:
+            # Guarded by locked(); a racing release already dropped the lock.
+            with contextlib.suppress(RuntimeError):
                 client._consolidation_lock.release()
-            except RuntimeError:
-                pass
 
 
 def start_consolidation_thread(client: RuntimeClient) -> None:

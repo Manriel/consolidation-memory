@@ -21,7 +21,7 @@ CHANGELOG = ROOT / "CHANGELOG.md"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.changelog_builder import (  # noqa: E402
+from scripts.changelog_builder import (
     DEFAULT_SUBJECT_LIMIT,
     emit_selection_report,
     select_release_subjects,

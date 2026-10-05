@@ -67,7 +67,10 @@ _LAZY_IMPORTS = {
     "RUN_STATUS_FAILED": "consolidation_memory.types",
 }
 
-__all__ = ["__version__"] + list(_LAZY_IMPORTS)
+# The suppression below is deliberate: the names are the keys of a dict[str, str],
+# so every entry is a string by construction, but the rule cannot see through the
+# unpacking, and the concatenated form trips RUF005 instead.
+__all__ = ["__version__", *list(_LAZY_IMPORTS)]  # noqa: PLE0604
 
 
 def __getattr__(name: str):

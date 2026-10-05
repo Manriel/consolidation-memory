@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import queue
@@ -79,10 +80,11 @@ class _LineReader(threading.Thread):
 
     def run(self) -> None:
         try:
-            for line in self._stream:  # type: ignore[attr-defined]
-                self._lines.put(line)
-        except Exception:
-            pass
+            # The stream raises when the child process is killed; the reader
+            # thread just stops reading and the sentinel unblocks the consumer.
+            with contextlib.suppress(Exception):
+                for line in self._stream:  # type: ignore[attr-defined]
+                    self._lines.put(line)
         finally:
             self._lines.put(None)
 
@@ -106,7 +108,10 @@ def _expected_protocol_version(requested: str) -> str | None:
     from the library keeps the expectation correct across ``mcp`` upgrades.
     """
     try:
-        from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, LATEST_HANDSHAKE_VERSION
+        from mcp_types.version import (
+            HANDSHAKE_PROTOCOL_VERSIONS,
+            LATEST_HANDSHAKE_VERSION,
+        )
     except ImportError:
         return None
     return requested if requested in HANDSHAKE_PROTOCOL_VERSIONS else LATEST_HANDSHAKE_VERSION
@@ -160,7 +165,9 @@ def _read_until(
 def _result(msg: dict[str, object], request_id: int) -> dict[str, object]:
     result = msg.get("result")
     if not isinstance(result, dict):
-        raise RuntimeError(f"id={request_id}: result is not an object: {json.dumps(msg)[:400]}")
+        raise RuntimeError(  # noqa: TRY004 - payload shape assertion, not an argument validator
+            f"id={request_id}: result is not an object: {json.dumps(msg)[:400]}"
+        )
     return result
 
 
@@ -298,10 +305,14 @@ def _check_non_ascii_round_trip(
         raise RuntimeError("memory_search returned no content frames")
     text = frames[0].get("text")
     if not isinstance(text, str):
-        raise RuntimeError("memory_search content frame carries no text")
+        raise RuntimeError(  # noqa: TRY004 - payload shape assertion, not an argument validator
+            "memory_search content frame carries no text"
+        )
     structured = search_result.get("structuredContent")
     if not isinstance(structured, dict):
-        raise RuntimeError("memory_search returned no structuredContent")
+        raise RuntimeError(  # noqa: TRY004 - payload shape assertion, not an argument validator
+            "memory_search returned no structuredContent"
+        )
 
     from_text = json.loads(text)
     from_structured = json.loads(json.dumps(structured))

@@ -25,7 +25,7 @@ _RECORD_TYPE_ALIASES: dict[str, str] = {
 DEFAULT_CLAIM_PRECISION = 1.0
 
 _RECORD_FIELD_SPECS: dict[str, list[tuple[str, bool]]] = {
-    # (field_name, lowercase_for_identity)
+    # each entry is one field name plus whether identity matching lowercases it
     "fact": [("subject", True), ("info", False)],
     "solution": [("problem", True), ("fix", False), ("context", False)],
     "preference": [("key", True), ("value", False), ("context", False)],

@@ -7,7 +7,7 @@ import re
 import sys
 import warnings
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import datetime, timezone
 from typing import IO
 
 # Maximum number of changelog bullets kept per release.
@@ -100,15 +100,12 @@ def should_ignore_commit_subject(subject: str) -> bool:
     cleaned = subject.strip()
     if not cleaned:
         return True
-    if RELEASE_SUBJECT_RE.match(cleaned):
-        return True
-    if MERGE_SUBJECT_RE.match(cleaned):
-        return True
-    if SKIP_SUBJECT_RE.search(cleaned):
-        return True
-    if cleaned.lower().startswith("chore(release):"):
-        return True
-    return False
+    return bool(
+        RELEASE_SUBJECT_RE.match(cleaned)
+        or MERGE_SUBJECT_RE.match(cleaned)
+        or SKIP_SUBJECT_RE.search(cleaned)
+        or cleaned.lower().startswith("chore(release):")
+    )
 
 
 def categorize_commit_subject(subject: str) -> str:
@@ -326,7 +323,9 @@ def render_changelog_entry(
     emit_warning: bool = True,
 ) -> str:
     """Render a full versioned changelog section."""
-    when = release_date or date.today().isoformat()
+    # UTC, not the committer's local calendar: the same release range must render
+    # the same date on every machine, and CI already runs in UTC.
+    when = release_date or datetime.now(tz=timezone.utc).date().isoformat()
     notes = collect_release_subjects(subjects, limit=limit, emit_warning=emit_warning)
     grouped = group_subjects_by_category(notes)
     body = render_categorized_body(grouped)

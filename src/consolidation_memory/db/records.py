@@ -507,7 +507,7 @@ def soft_delete_records_by_ids(record_ids: list[str]) -> int:
         placeholders = ",".join("?" for _ in record_ids)
         cursor = conn.execute(
             f"UPDATE knowledge_records SET deleted = 1, updated_at = ? WHERE id IN ({placeholders}) AND deleted = 0",
-            [now] + record_ids,
+            [now, *record_ids],
         )
     return int(cursor.rowcount)
 
@@ -522,7 +522,7 @@ def increment_record_access(record_ids: list[str]) -> None:
             updated_at = ? WHERE id IN ({placeholders})"""
         conn.execute(
             query,
-            [_now()] + record_ids,
+            [_now(), *record_ids],
         )
 
 

@@ -24,7 +24,9 @@ from datetime import datetime, timezone
 import numpy as np
 
 from consolidation_memory.database import get_all_active_records
-from consolidation_memory.embedding_disk_cache import clear_namespace as _clear_disk_namespace
+from consolidation_memory.embedding_disk_cache import (
+    clear_namespace as _clear_disk_namespace,
+)
 from consolidation_memory.embedding_disk_cache import embed_items_incremental
 from consolidation_memory.utils import parse_datetime
 

@@ -15,6 +15,7 @@ Usage::
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -323,15 +324,13 @@ def _write_temp_text(path: os.PathLike[str] | str, content: str) -> str:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(content)
             handle.flush()
-            try:
+            # Best-effort durability: fsync is unsupported on some filesystems.
+            with contextlib.suppress(OSError):
                 os.fsync(handle.fileno())
-            except OSError:
-                pass
     except Exception:
-        try:
+        # Best-effort cleanup of a temp file whose write already failed.
+        with contextlib.suppress(OSError):
             os.unlink(temp_path)
-        except OSError:
-            pass
         raise
     return temp_path
 
@@ -2245,9 +2244,8 @@ class MemoryClient:
             get_plugin_manager().fire("on_forget", episode_id=episode_id)
 
             return ForgetResult(status="forgotten", id=episode_id)
-        else:
-            logger.warning("Episode %s not found for deletion", episode_id)
-            return ForgetResult(status="not_found", id=episode_id)
+        logger.warning("Episode %s not found for deletion", episode_id)
+        return ForgetResult(status="not_found", id=episode_id)
 
     def export(
         self,

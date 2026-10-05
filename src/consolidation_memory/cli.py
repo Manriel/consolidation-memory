@@ -23,6 +23,7 @@ Usage:
 """
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -120,7 +121,11 @@ def cmd_serve(args):
 
 def _write_default_config(*, embed_backend: str, llm_backend: str) -> None:
     """Write a starter config.toml and initialize data directories."""
-    from consolidation_memory.config import get_active_project, get_config, get_default_config_dir
+    from consolidation_memory.config import (
+        get_active_project,
+        get_config,
+        get_default_config_dir,
+    )
 
     embed_config = f"backend = {_toml_basic_string(embed_backend)}"
     llm_config = f"backend = {_toml_basic_string(llm_backend)}"
@@ -399,15 +404,11 @@ def cmd_test() -> None:
     finally:
         # Always clean up test episode, even if steps above failed
         if test_episode_id and not forgotten:
-            try:
+            with contextlib.suppress(Exception):
                 soft_delete_episode(test_episode_id)
-            except Exception:
-                pass
             if vs:
-                try:
+                with contextlib.suppress(Exception):
                     vs.remove(test_episode_id)
-                except Exception:
-                    pass
 
     # 7. Summary
     passed = sum(checks)
@@ -831,10 +832,9 @@ def cmd_import(path: str):
             print(f"  Warning: Failed to index episode batch {i}-{i + len(batch)}: {e}")
             failed += len(inserted_ids)
             for episode_id in inserted_ids:
-                try:
+                # Rollback of a batch that already reported its failure on stderr.
+                with contextlib.suppress(Exception):
                     hard_delete_episode(episode_id)
-                except Exception:
-                    pass
 
     print(f"\nEpisodes: {imported} imported, {skipped} skipped (already exist), {failed} failed")
 
@@ -1161,10 +1161,9 @@ def cmd_reindex() -> None:
         with os.fdopen(map_fd, "w") as f:
                     json.dump(all_ids, f)
                     f.flush()
-                    try:
+                    # Best-effort durability: fsync is unsupported on some filesystems.
+                    with contextlib.suppress(OSError):
                         os.fsync(f.fileno())
-                    except OSError:
-                        pass
     except Exception:
         os.unlink(idx_tmp)
         os.unlink(map_tmp)
@@ -1176,10 +1175,9 @@ def cmd_reindex() -> None:
         with os.fdopen(tomb_fd, "w") as f:
                     json.dump([], f)
                     f.flush()
-                    try:
+                    # Best-effort durability: fsync is unsupported on some filesystems.
+                    with contextlib.suppress(OSError):
                         os.fsync(f.fileno())
-                    except OSError:
-                        pass
     except Exception:
         os.unlink(idx_tmp)
         os.unlink(map_tmp)

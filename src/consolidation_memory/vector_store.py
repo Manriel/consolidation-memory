@@ -20,7 +20,7 @@ import os
 import tempfile
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from typing import Any
 
 import faiss
@@ -55,7 +55,7 @@ class VectorStore:
         if cfg.FAISS_INDEX_PATH.exists() and cfg.FAISS_ID_MAP_PATH.exists():
             logger.info("Loading FAISS index from %s", cfg.FAISS_INDEX_PATH)
             self._index = faiss.read_index(str(cfg.FAISS_INDEX_PATH))
-            with open(cfg.FAISS_ID_MAP_PATH, "r") as f:
+            with open(cfg.FAISS_ID_MAP_PATH) as f:
                 self._id_map = json.load(f)
             self._uuid_to_pos = {uid: i for i, uid in enumerate(self._id_map)}
 
@@ -120,7 +120,7 @@ class VectorStore:
 
         if cfg.FAISS_TOMBSTONE_PATH.exists():
             try:
-                with open(cfg.FAISS_TOMBSTONE_PATH, "r") as f:
+                with open(cfg.FAISS_TOMBSTONE_PATH) as f:
                     self._tombstones = set(json.load(f))
                 if self._tombstones:
                     logger.info("Loaded %d tombstones", len(self._tombstones))
@@ -186,10 +186,9 @@ class VectorStore:
                 with os.fdopen(map_fd, "w") as f:
                     json.dump(self._id_map, f)
                     f.flush()
-                    try:
+                    # Best-effort durability: fsync is unsupported on some filesystems.
+                    with suppress(OSError):
                         os.fsync(f.fileno())
-                    except OSError:
-                        pass
             except Exception:
                 os.unlink(idx_tmp)
                 os.unlink(map_tmp)
@@ -211,10 +210,9 @@ class VectorStore:
                 with os.fdopen(fd, "w") as f:
                     json.dump(list(self._tombstones), f)
                     f.flush()
-                    try:
+                    # Best-effort durability: fsync is unsupported on some filesystems.
+                    with suppress(OSError):
                         os.fsync(f.fileno())
-                    except OSError:
-                        pass
             except Exception:
                 os.unlink(tmp)
                 raise
@@ -632,7 +630,7 @@ class VectorStore:
 
         if os.path.exists(meta_path):
             try:
-                with open(meta_path, "r") as f:
+                with open(meta_path) as f:
                     stored = json.load(f)
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning("Failed to read embedding metadata: %s", e)

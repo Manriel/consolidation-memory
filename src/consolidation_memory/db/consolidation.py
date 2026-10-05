@@ -407,7 +407,7 @@ def increment_consolidation_attempts(episode_ids: list[str]) -> None:
         conn.execute(
             f"UPDATE episodes SET consolidation_attempts = consolidation_attempts + 1, "
             f"last_consolidation_attempt = ? WHERE id IN ({placeholders})",
-            [now] + episode_ids,
+            [now, *episode_ids],
         )
 
 

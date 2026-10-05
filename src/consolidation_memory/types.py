@@ -34,7 +34,9 @@ VALID_EPISODE_CONTENT_TYPES: frozenset[str] = frozenset(
 def validate_episode_content_type(value: object, *, field_name: str = "content_type") -> str:
     """Validate episode content_type consistently across all surfaces."""
     if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            f"{field_name} must be a string"
+        )
     if value not in VALID_EPISODE_CONTENT_TYPES:
         allowed = ", ".join(sorted(VALID_EPISODE_CONTENT_TYPES))
         raise ValueError(f"{field_name} must be one of: {allowed}")

@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.changelog_builder import (  # noqa: E402
+from scripts.changelog_builder import (
     DEFAULT_SUBJECT_LIMIT,
     emit_selection_report,
     extract_unreleased_subjects,
@@ -33,6 +33,7 @@ from scripts.changelog_builder import (  # noqa: E402
     remove_unreleased_section,
     select_release_subjects,
 )
+
 PYPROJECT = ROOT / "pyproject.toml"
 CHANGELOG = ROOT / "CHANGELOG.md"
 PACKAGE_NAME = "consolidation-memory"
@@ -202,7 +203,9 @@ def version_exists_on_pypi(version: str) -> bool:
         raise RuntimeError(f"Failed to query {url}: {exc.reason}") from exc
     releases = payload.get("releases")
     if not isinstance(releases, dict):
-        raise RuntimeError("Unexpected PyPI payload: missing 'releases'")
+        raise RuntimeError(  # noqa: TRY004 - payload shape assertion, not an argument validator
+            "Unexpected PyPI payload: missing 'releases'"
+        )
     return version in releases
 
 

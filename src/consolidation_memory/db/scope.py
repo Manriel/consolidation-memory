@@ -136,7 +136,7 @@ def _apply_scope_filters(
 
 def _normalize_principal_token(value: object) -> str:
     if not isinstance(value, str):
-        raise ValueError("principal value must be a string")
+        raise TypeError("principal value must be a string")
     cleaned = value.strip()
     if not cleaned:
         raise ValueError("principal value must be non-empty")

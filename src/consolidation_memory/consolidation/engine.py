@@ -65,7 +65,9 @@ from consolidation_memory.database import (
     upsert_claim,
     upsert_knowledge_topic,
 )
-from consolidation_memory.hypothesis_competition import apply_competing_hypothesis_precision
+from consolidation_memory.hypothesis_competition import (
+    apply_competing_hypothesis_precision,
+)
 from consolidation_memory.plugins import get_plugin_manager
 from consolidation_memory.types import (
     RUN_STATUS_COMPLETED,

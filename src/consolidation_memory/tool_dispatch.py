@@ -161,9 +161,19 @@ def _run_detect_drift(*, base_ref: str | None = None, repo_path: str | None = No
     return dict(detect_code_drift(base_ref=base_ref, repo_path=repo_path))
 
 
+# Argument validators below raise ValueError, not TypeError, and that is the
+# seam's deliberate convention rather than an oversight. Every surface that can
+# reach these helpers collapses the two anyway: `rest._tool_endpoint` maps
+# `except (TypeError, ValueError)` to HTTP 422, and the MCP and OpenAI dispatch
+# wrappers catch `Exception` and return `isError` / an error payload. So the
+# choice of class is not observable on any published surface, and keeping one
+# class means a rejected argument reads the same whether it failed on type or on
+# value. The TRY004 suppressions below record that decision site by site.
 def _validate_content(value: object) -> str:
     if not isinstance(value, str):
-        raise ValueError("content must be a string")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            "content must be a string"
+        )
     if len(value) > _MAX_CONTENT_LENGTH:
         raise ValueError(
             f"Content too long ({len(value)} chars). Maximum is {_MAX_CONTENT_LENGTH} characters."
@@ -181,7 +191,9 @@ def _validate_optional_text(
     if value is None:
         return None
     if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            f"{field_name} must be a string"
+        )
     if not allow_empty and not value.strip():
         raise ValueError(f"{field_name} must not be empty")
     if len(value) > max_length:
@@ -211,7 +223,9 @@ def _validate_content_type_list(field_name: str, value: object) -> list[str] | N
     if value is None:
         return None
     if not isinstance(value, list):
-        raise ValueError(f"{field_name} must be a list of strings")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            f"{field_name} must be a list of strings"
+        )
     validated: list[str] = []
     for index, item in enumerate(value):
         validated.append(
@@ -227,13 +241,17 @@ def _validate_tags(value: object) -> list[str] | None:
     if value is None:
         return None
     if not isinstance(value, list):
-        raise ValueError("tags must be a list of strings")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            "tags must be a list of strings"
+        )
     if len(value) > _MAX_TAGS:
         raise ValueError(f"tags exceeds maximum of {_MAX_TAGS} entries")
     validated: list[str] = []
     for index, item in enumerate(value):
         if not isinstance(item, str):
-            raise ValueError(f"tags[{index}] must be a string")
+            raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+                f"tags[{index}] must be a string"
+            )
         if len(item) > _MAX_TAG_LENGTH:
             raise ValueError(
                 f"tags[{index}] too long ({len(item)} chars). Maximum is {_MAX_TAG_LENGTH} characters."
@@ -244,7 +262,9 @@ def _validate_tags(value: object) -> list[str] | None:
 
 def _validate_surprise(value: object, *, field_name: str = "surprise") -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{field_name} must be a number between 0.0 and 1.0")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            f"{field_name} must be a number between 0.0 and 1.0"
+        )
     surprise = float(value)
     if not 0.0 <= surprise <= 1.0:
         raise ValueError(f"{field_name} must be between 0.0 and 1.0")
@@ -261,13 +281,17 @@ def _validate_string_list(
     if value is None:
         return None
     if not isinstance(value, list):
-        raise ValueError(f"{field_name} must be a list of strings")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            f"{field_name} must be a list of strings"
+        )
     if len(value) > max_items:
         raise ValueError(f"{field_name} exceeds maximum of {max_items} entries")
     validated: list[str] = []
     for index, item in enumerate(value):
         if not isinstance(item, str):
-            raise ValueError(f"{field_name}[{index}] must be a string")
+            raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+                f"{field_name}[{index}] must be a string"
+            )
         token = item.strip()
         if not token:
             continue
@@ -281,7 +305,9 @@ def _validate_string_list(
 
 def _validate_outcome_type(value: object) -> str:
     if not isinstance(value, str):
-        raise ValueError("outcome_type must be a string")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            "outcome_type must be a string"
+        )
     token = value.strip().lower()
     if token not in _VALID_OUTCOME_TYPES:
         allowed = ", ".join(sorted(_VALID_OUTCOME_TYPES))
@@ -293,11 +319,15 @@ def _validate_code_anchors(value: object) -> list[dict[str, str]] | None:
     if value is None:
         return None
     if not isinstance(value, list):
-        raise ValueError("code_anchors must be a list of objects")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            "code_anchors must be a list of objects"
+        )
     anchors: list[dict[str, str]] = []
     for index, item in enumerate(value):
         if not isinstance(item, Mapping):
-            raise ValueError(f"code_anchors[{index}] must be an object")
+            raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+                f"code_anchors[{index}] must be an object"
+            )
         anchor_type = item.get("anchor_type", item.get("type"))
         anchor_value = item.get("anchor_value", item.get("value"))
         if not isinstance(anchor_type, str) or not anchor_type.strip():
@@ -335,7 +365,9 @@ def _validate_bounded_int(
     maximum: int,
 ) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{field_name} must be an integer between {minimum} and {maximum}")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            f"{field_name} must be an integer between {minimum} and {maximum}"
+        )
     if value < minimum or value > maximum:
         raise ValueError(f"{field_name} must be between {minimum} and {maximum}")
     return value
@@ -343,7 +375,9 @@ def _validate_bounded_int(
 
 def _validate_bool(field_name: str, value: object) -> bool:
     if not isinstance(value, bool):
-        raise ValueError(f"{field_name} must be a boolean")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            f"{field_name} must be a boolean"
+        )
     return value
 
 
@@ -378,12 +412,16 @@ def _validate_scope(value: object) -> ScopeEnvelope | dict[str, object] | None:
         coerce_scope_envelope(normalized_from_string)
         return normalized_from_string
     if not isinstance(value, Mapping):
-        raise ValueError("scope must be an object or string")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            "scope must be an object or string"
+        )
 
     normalized: dict[str, object] = {}
     for key, item in value.items():
         if not isinstance(key, str):
-            raise ValueError("scope keys must be strings")
+            raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+                "scope keys must be strings"
+            )
         normalized[key] = item
 
     coerce_scope_envelope(normalized)
@@ -399,13 +437,17 @@ def _validate_filename(value: object, *, field_name: str = "filename") -> str:
 
 def _validate_batch_episodes(episodes: object) -> list[dict[str, Any]]:
     if not isinstance(episodes, list):
-        raise ValueError("episodes must be a list")
+        raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+            "episodes must be a list"
+        )
     if len(episodes) > _MAX_BATCH_SIZE:
         raise ValueError(f"Batch size {len(episodes)} exceeds maximum of {_MAX_BATCH_SIZE}")
     validated: list[dict[str, Any]] = []
     for index, item in enumerate(episodes):
         if not isinstance(item, dict):
-            raise ValueError(f"Episode {index} must be an object")
+            raise ValueError(  # noqa: TRY004 - validators raise ValueError by seam convention
+                f"Episode {index} must be an object"
+            )
         if "content" not in item:
             raise ValueError(f"Episode {index} is missing required field 'content'")
         content = _validate_content(item["content"])
