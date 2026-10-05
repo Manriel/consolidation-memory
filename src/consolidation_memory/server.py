@@ -22,15 +22,15 @@ import tempfile
 import threading
 import time
 import traceback
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Annotated, Any, TypeAlias, TypeVar, cast
 
 from mcp.server import MCPServer
-from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
 from mcp.types import CallToolResult, TextContent
 from pydantic import ConfigDict, Field
 
+from consolidation_memory import mcp_compat
 from consolidation_memory.drift_subprocess import run_detect_drift_subprocess
 from consolidation_memory.runtime import MemoryRuntime
 from consolidation_memory.tool_adapter import (
@@ -911,6 +911,10 @@ async def lifespan(server: MCPServer):
 
     logger.info("Starting consolidation_memory MCP server v%s...", __version__)
     logger.info("Active project: %s", get_active_project())
+    # Refuse to serve if any registered tool lost its two-arm outputSchema
+    # (late registration, or a private mcp SDK surface moving). Cheap: the
+    # already-published tools are cache hits.
+    _publish_and_verify_output_schemas()
     _preload_numeric_backends()
     if _warmup_on_start() and _runtime_started and _startup_error is None:
         _warmup_task = asyncio.create_task(_warm_client_background())
@@ -948,8 +952,11 @@ async def lifespan(server: MCPServer):
 
 # Unknown tool arguments must fail as input validation errors instead of being
 # silently dropped (pydantic's default extra="ignore"); "forbid" also publishes
-# additionalProperties: false in every input schema. Set before tools register.
-ArgModelBase.model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+# additionalProperties: false in every input schema. Set before tools register,
+# because each tool's arg model is derived from ArgModelBase at registration
+# time. mcp_compat owns every private mcp import; see its module docstring for
+# the surfaces used and why a minor mcp bump can break them.
+mcp_compat.ArgModelBase.model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
 mcp = MCPServer("consolidation_memory", lifespan=lifespan)
 
@@ -1834,18 +1841,40 @@ _ERROR_OUTPUT_ARM: dict[str, Any] = {
     "additionalProperties": True,
 }
 
+# Tool name -> the exact dict object published for it. Identity is the cache key:
+# a re-registered tool gets a fresh schema object, so it is republished instead of
+# being skipped as "already done".
+_PUBLISHED_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {}
 
-def _publish_output_schemas() -> None:
+
+def _publish_output_schemas() -> list[str]:
     """Publish each tool's output schema as anyOf[success contract, error payload].
 
     Success payloads are validated against the contract model itself; error
     results skip output validation and carry ``{"error": ...}`` instead, so the
     published schema has to accept both shapes (MCP spec: clients validate
     structured results against outputSchema).
+
+    Idempotent and self-healing: called at import, on every tool listing, and at
+    lifespan startup. A tool registered after import (plugins, a future dynamic
+    tool) is published on the next listing instead of serving a success-only
+    schema forever. The cache check is the published ``anyOf`` marker itself, so
+    repeat calls rebuild nothing and can never re-wrap an already-wrapped arm.
+    Returns the problems found (a tool with no output schema at all) for the
+    caller to report.
     """
-    for tool in mcp._tool_manager._tools.values():
-        schema = tool.fn_metadata.output_schema
-        if schema is None or "anyOf" in schema:
+    problems: list[str] = []
+    for name, tool in mcp_compat.registered_tools(mcp).items():
+        schema = mcp_compat.output_schema_dict(tool)
+        if schema is None:
+            problems.append(f"{name}: handler has no annotated return contract, so no outputSchema")
+            continue
+        if _PUBLISHED_OUTPUT_SCHEMAS.get(name) is schema:
+            continue
+        if "anyOf" in schema:
+            # Already carries the two-arm contract (published here or by a
+            # caller that owns it); adopt it instead of nesting a second pair.
+            _PUBLISHED_OUTPUT_SCHEMAS[name] = schema
             continue
         success = dict(schema)
         defs = success.pop("$defs", None)
@@ -1854,12 +1883,51 @@ def _publish_output_schemas() -> None:
         published: dict[str, Any] = {"type": "object", "anyOf": [success, _ERROR_OUTPUT_ARM]}
         if defs is not None:
             published["$defs"] = defs
-        # Shared dict object: mutating in place updates the tool listing too.
-        schema.clear()
-        schema.update(published)
+        mcp_compat.set_output_schema(tool, published)
+        _PUBLISHED_OUTPUT_SCHEMAS[name] = published
+    return problems
 
 
-_publish_output_schemas()
+def _verify_published_output_schemas(unrepairable: Sequence[str] = ()) -> None:
+    """Fail startup unless every registered tool publishes the two-arm contract.
+
+    This is the guard the previous one-shot import-time publication lacked: a
+    private-SDK rename used to strip ``outputSchema`` from every tool (or leave
+    a success-only one) with no error anywhere. A client that trusted the
+    contract would then reject every ``{"error": ...}`` failure payload. Raise
+    at startup instead of degrading silently.
+
+    Pure verification — it never repairs, so it can actually fail. Callers run
+    :func:`_publish_output_schemas` first and pass the problems it could not fix
+    (a tool with no annotated return contract) in as ``unrepairable``.
+    """
+    problems = list(unrepairable)
+    for name, tool in mcp_compat.registered_tools(mcp).items():
+        schema = mcp_compat.output_schema_dict(tool) or {}
+        arms = schema.get("anyOf")
+        if not isinstance(arms, list) or len(arms) != 2:
+            problems.append(f"{name}: published outputSchema is not anyOf[success, error]")
+            continue
+        if arms[1].get("title") != "ToolErrorPayload" or arms[1].get("required") != ["error"]:
+            problems.append(f"{name}: published outputSchema is missing the ToolErrorPayload arm")
+    if not problems:
+        return
+    raise mcp_compat.MCPCompatError(
+        "MCP outputSchema contract is incomplete at startup: "
+        + "; ".join(problems)
+        + f". Installed mcp: {mcp_compat.installed_mcp_version()}; supported range: "
+        f"mcp {mcp_compat.MCP_COMPAT_REQUIREMENT}. See consolidation_memory/mcp_compat.py for the "
+        "private SDK surfaces this depends on."
+    )
+
+
+def _publish_and_verify_output_schemas() -> None:
+    """Repair what can be repaired, then fail on whatever is still broken."""
+    _verify_published_output_schemas(_publish_output_schemas())
+
+
+_publish_and_verify_output_schemas()
+mcp_compat.install_list_tools_heal(mcp, _publish_output_schemas)
 
 
 def run_server() -> None:
