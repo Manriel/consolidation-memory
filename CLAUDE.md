@@ -35,6 +35,10 @@ src/consolidation_memory/
 - Package version: `pyproject.toml`; schema version: `db/migrations.py`
   (`CURRENT_SCHEMA_VERSION`).
 - Tool surface: `schemas.openai_tools` (module-level list) and `schemas.dispatch_tool_call`. **29 tools, 104 published parameters, 28 output contracts** — `memory_store` and `memory_remember` share `StoreOutput`, `memory_store_batch` has its own `BatchStoreOutput`. A handler's return annotation in `tool_contracts.py` is the published `outputSchema`, validated at runtime with `extra="allow"` so unknown payload keys survive.
+- Tool descriptions have **one** source: `schemas.openai_tools`. `_tracked_tool` passes the
+  published text to `mcp.tool(description=...)`, and `_verify_tool_descriptions()` fails at
+  import if a handler docstring diverges — MCP publishing a shorter summary is a silent
+  contract loss, since the description is what a host reads to choose a tool.
 - MCP SDK: `mcp[cli]>=2.3.0,<3` (upstream renamed `FastMCP` to `MCPServer` in 2.x).
   Every private SDK touch is isolated in `mcp_compat.py` — `ArgModelBase`,
   `MCPServer._tool_manager`, `ToolManager._tools`, `fn_metadata.output_schema` and the
@@ -113,11 +117,6 @@ refactors; strike items off as they close.
 
 **Open**
 
-- **P0 `memory_scope_list` description**: the tool is intentionally *not* filtered by
-  `read_visibility`, and `SECURITY.md`, `docs/ACL.md`, `docs/MCP_GUIDE.md` and
-  `docs/ROADMAP.md` all say so. The published `schemas.py` description — and
-  `docs/TOOLS.md`, which is generated from it — still does not, and the tool
-  description is what an agent host reads.
 - **P1 Unvalidated contract subtrees**: 32 of 184 success-arm properties publish as
   `dict[str, Any]` / `list[dict[str, Any]]`, so their subtrees are validated as "is
   an object" and nothing more. `tests/test_output_contract_payload_typing.py` ratchets
@@ -132,6 +131,11 @@ refactors; strike items off as they close.
   dependabot for it; the import-time self-checks fail loudly, they do not degrade.
 
 **Closed** (kept as a record of what these blind spots were)
+
+- ~~`memory_scope_list` description~~: `schemas.openai_tools` is the single source for
+  every tool description; `_tracked_tool` passes it to `mcp.tool(description=...)` and
+  `server._verify_tool_descriptions()` fails at import if a docstring diverges. Both
+  discovery tools state that they are not read-visibility filtered, on both surfaces.
 
 - ~~Scope on audit APIs~~: `contradictions`, `decay_report`, `consolidation_log`, `status` take resolved default scope; explicit `scope` narrows further; `global_scope=True` for the corpus-wide view.
 - ~~`content_type` validation~~: shared `validate_episode_content_type()` in `types.py`.
