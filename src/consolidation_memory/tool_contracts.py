@@ -509,7 +509,6 @@ class ScopeListNamespace(_Output):
     sharing_mode: str | None = Field(
         description="Namespace sharing mode: private, shared, team or managed."
     )
-    display_name: str | None = Field(description="Human-readable namespace name, when set.")
 
 
 class ScopeListAppClient(_Output):
