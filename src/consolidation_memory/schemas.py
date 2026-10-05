@@ -1275,10 +1275,23 @@ openai_tools: list[dict[str, Any]] = [
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
 
+# Every schema above declares ``additionalProperties: false``; the dispatch path
+# enforces that instead of trusting it. Unknown argument keys raise
+# ``consolidation_memory.tool_dispatch.ToolContractError`` (a ``ValueError``) with
+# the offending keys named and the published ``inputSchema`` named as the contract
+# — the same actionable rejection the MCP path produces from pydantic's
+# ``extra="forbid"``. Runtime and value validation failures still come back as
+# ``{"error": ...}`` payloads, the long-standing OpenAI surface convention for a
+# failed tool call.
+
 def dispatch_tool_call(
     client: MemoryClient,
     name: str,
     arguments: dict[str, Any],
 ) -> dict[str, Any]:
-    """Execute a tool call against a MemoryClient and return the result as a dict."""
+    """Execute a tool call against a MemoryClient and return the result as a dict.
+
+    Raises ``consolidation_memory.tool_dispatch.ToolContractError`` when
+    ``arguments`` carry keys the published schema does not declare.
+    """
     return _dispatch_tool_call(client, name, arguments)
