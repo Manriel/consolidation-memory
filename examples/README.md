@@ -17,19 +17,19 @@ pip install "consolidation-memory[fastembed]"
 
 Examples in this directory:
 
-- `python-quickstart/quickstart.py`
+- [python-quickstart/quickstart.py](python-quickstart/quickstart.py)
   - Smallest end-to-end Python API demo.
-- `rest-api/`
+- [rest-api/](rest-api/README.md)
   - Start the REST server, then store and recall with an HTTP client.
-- `cursor-integration/`
+- [cursor-integration/](cursor-integration/README.md)
   - Drop-in MCP config for Cursor.
-- `continue-dev/`
+- [continue-dev/](continue-dev/README.md)
   - Drop-in MCP config for Continue.
-- `langgraph-memory-node/`
+- [langgraph-memory-node/](langgraph-memory-node/README.md)
   - LangGraph node example that reads from `MemoryClient`.
-- `plugins/`
+- [plugins/](plugins/README.md)
   - Minimal plugin that logs recall activity.
-- `trust-vs-rag/`
+- [trust-vs-rag/](trust-vs-rag/README.md)
   - Same bug twice: store a path-anchored solution, consolidate to claims, drift-challenge on refactor (`demo_flow.py`).
 
 Notes:

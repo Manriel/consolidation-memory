@@ -440,4 +440,4 @@ Details, tabs, data paths and trust rules: **[docs/UI.md](docs/UI.md)**.
 - [Releases](https://github.com/charliee1w/consolidation-memory/releases) · [Changelog](CHANGELOG.md)
 - [Security policy](https://github.com/charliee1w/consolidation-memory/security/policy)
 
-MIT · [Code of Conduct](CODE_OF_CONDUCT.md)
+MIT · [Code of Conduct](CODE_OF_CONDUCT.md) · [Contributors](CONTRIBUTORS.md)
