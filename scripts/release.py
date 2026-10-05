@@ -26,10 +26,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.changelog_builder import (  # noqa: E402
-    collect_release_subjects,
+    DEFAULT_SUBJECT_LIMIT,
+    emit_selection_report,
     extract_unreleased_subjects,
     insert_version_entry,
     remove_unreleased_section,
+    select_release_subjects,
 )
 PYPROJECT = ROOT / "pyproject.toml"
 CHANGELOG = ROOT / "CHANGELOG.md"
@@ -133,21 +135,38 @@ def get_latest_tag() -> str | None:
     return tag or None
 
 
-def collect_release_notes(previous_tag: str | None) -> list[str]:
+def collect_release_notes(
+    previous_tag: str | None,
+    *,
+    limit: int = DEFAULT_SUBJECT_LIMIT,
+) -> list[str]:
     cmd = ["git", "log", "--pretty=format:%s"]
     if previous_tag:
         cmd.append(f"{previous_tag}..HEAD")
     result = run(cmd, capture=True)
     subjects = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     subjects.reverse()
-    return collect_release_subjects(subjects)
+    selection = select_release_subjects(subjects, limit=limit)
+    emit_selection_report(selection)
+    return selection.subjects
 
 
-def add_changelog_entry(new_version: str, notes: list[str]) -> bool:
+def add_changelog_entry(
+    new_version: str,
+    notes: list[str],
+    *,
+    limit: int = DEFAULT_SUBJECT_LIMIT,
+) -> bool:
     text = CHANGELOG.read_text(encoding="utf-8")
     unreleased_notes = extract_unreleased_subjects(text)
     release_notes = unreleased_notes or notes
-    updated, inserted = insert_version_entry(text, new_version, release_notes)
+    updated, inserted = insert_version_entry(
+        text,
+        new_version,
+        release_notes,
+        limit=limit,
+        emit_warning=False,
+    )
     if not inserted:
         print(f"  Changelog already has entry for {new_version}, skipping insertion")
         return False
@@ -427,6 +446,16 @@ def main() -> None:
         action="store_true",
         help="Skip remote PyPI version collision check.",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=DEFAULT_SUBJECT_LIMIT,
+        help=(
+            "Maximum changelog bullets for this release. Internal-only commits "
+            "(docs/chore/test/ci/refactor/style/build) are dropped before user-visible ones, "
+            f"and truncation is reported. (default: {DEFAULT_SUBJECT_LIMIT})"
+        ),
+    )
     args = parser.parse_args()
 
     if not PYPROJECT.exists():
@@ -482,7 +511,7 @@ def main() -> None:
             sys.exit(f"{PACKAGE_NAME} {new_version} already exists on PyPI.")
 
     previous_tag = get_latest_tag()
-    release_notes = collect_release_notes(previous_tag)
+    release_notes = collect_release_notes(previous_tag, limit=args.limit)
 
     print(f"\n[4/9] Preparing files for {new_version}...")
     pyproject_before = PYPROJECT.read_text(encoding="utf-8")
@@ -495,7 +524,7 @@ def main() -> None:
                 raise RuntimeError(
                     f"Version substitution failed: expected {new_version}, got {actual} in pyproject.toml"
                 )
-            inserted = add_changelog_entry(new_version, release_notes)
+            inserted = add_changelog_entry(new_version, release_notes, limit=args.limit)
             if inserted:
                 source = previous_tag or "repository start"
                 print(f"  Added changelog entry from commits since {source}.")
