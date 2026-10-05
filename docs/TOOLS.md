@@ -661,9 +661,11 @@ Apply corpus hygiene cleanup (forget episodes, optionally expire orphans).
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `status` | `string` | yes | Outcome, e.g. dry_run or applied. |
+| `status` | `enum('dry_run', 'applied')` | yes | Outcome: dry_run (preview, corpus untouched) or applied (cleanup committed). |
 | `episode_targets` | `integer` | yes | Episodes selected for cleanup. |
 | `episode_ids` | `string[]` | yes | Ids of the selected episodes. |
+| `forgotten` | `integer` | yes | Episodes actually forgotten; 0 for a dry run. |
+| `not_found` | `integer` | yes | Selected episode ids that were already gone; 0 for a dry run. |
 | `expire_orphans` | `boolean` | yes | Whether orphaned claims were expired. |
 | `orphan_repair` | `object \| null` | yes | Orphan repair summary, null when not requested. |
 
