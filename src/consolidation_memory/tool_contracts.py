@@ -6,7 +6,9 @@ Each model mirrors one tool's dispatch payload:
 - ``extra="allow"`` — payload keys added upstream are kept, never dropped;
 - required fields follow the shapes the dispatcher always emits (see
   ``types.py`` dataclasses and captured payloads);
-- ``Field(description=...)`` documents every property for clients and models.
+- ``Field(description=...)`` documents every property for clients and models;
+- contracts that publish a ``types.py`` result type are checked against it at
+  import time, so the wire promise cannot drift from the payload.
 
 The MCP server wraps each contract's JSON schema as ``anyOf[success, error]``
 before publishing (see ``server._publish_output_schemas``), so tool execution
@@ -15,9 +17,11 @@ error payloads (``{"error": "..."}``) validate against the same schema.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, get_type_hints
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from consolidation_memory.types import HygieneApplyResult
 
 __all__ = [
     "AskOutput",
@@ -468,11 +472,21 @@ class HygieneScanOutput(_Output):
 
 
 class HygieneApplyOutput(_Output):
-    """Result of applying corpus hygiene cleanup."""
+    """Result of applying corpus hygiene cleanup.
 
-    status: str = Field(description="Outcome, e.g. dry_run or applied.")
+    Mirrors ``types.HygieneApplyResult``, the payload
+    ``corpus_hygiene.apply_corpus_hygiene`` actually builds; both modes send
+    every property. ``_assert_mirrors_result_type`` fails at import if the two
+    ever drift.
+    """
+
+    status: Literal["dry_run", "applied"] = Field(
+        description="Outcome: dry_run (preview, corpus untouched) or applied (cleanup committed)."
+    )
     episode_targets: int = Field(description="Episodes selected for cleanup.")
     episode_ids: list[str] = Field(description="Ids of the selected episodes.")
+    forgotten: int = Field(description="Episodes actually forgotten; 0 for a dry run.")
+    not_found: int = Field(description="Selected episode ids that were already gone; 0 for a dry run.")
     expire_orphans: bool = Field(description="Whether orphaned claims were expired.")
     orphan_repair: dict[str, Any] | None = Field(
         description="Orphan repair summary, null when not requested."
@@ -595,3 +609,36 @@ class ScopeListOutput(_Output):
     message: str | None = Field(
         description="Set when the window does not cover every scope; explains how to page."
     )
+
+
+def _assert_mirrors_result_type(contract: type[_Output], result_type: type[Any]) -> None:
+    """Fail at import when a contract drifts from the result type it publishes.
+
+    The dataclass is what the producer sends and the contract is what the wire
+    promises. A field on one side only either rejects an otherwise valid
+    payload — after the tool already applied its side effects — or advertises a
+    key that never arrives, so the mismatch has to break the process instead of
+    one client's cleanup.
+    """
+    hints = get_type_hints(result_type)
+    declared = {name: spec.annotation for name, spec in contract.model_fields.items()}
+    if set(declared) != set(hints):
+        raise RuntimeError(
+            f"{contract.__name__} does not mirror {result_type.__name__}: "
+            f"missing={sorted(set(hints) - set(declared))} "
+            f"extra={sorted(set(declared) - set(hints))}"
+        )
+    for name, annotation in declared.items():
+        if annotation != hints[name]:
+            raise RuntimeError(
+                f"{contract.__name__}.{name} is {annotation!r}, but "
+                f"{result_type.__name__} sends {hints[name]!r}"
+            )
+        if not contract.model_fields[name].is_required():
+            raise RuntimeError(
+                f"{contract.__name__}.{name} must stay required: the producer sends "
+                "every field, so a missing key is a bug, not a valid payload"
+            )
+
+
+_assert_mirrors_result_type(HygieneApplyOutput, HygieneApplyResult)
