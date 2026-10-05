@@ -82,9 +82,9 @@ python scripts/release.py --bump minor --limit 400
 
 200 is a runaway guard, not a routine filter. The largest tag-to-tag range in this
 repository's history is 24 commits (`v0.19.0..v0.20.0`), and 200 bullets is a few
-kilobytes of Markdown — roughly 7x headroom. Recompute the range with
-`git rev-list --count <previous-tag>..<tag>` across `git tag | sort -V`; if it
-approaches the default, raise `DEFAULT_SUBJECT_LIMIT` in
+kilobytes of Markdown — about 8x headroom (200 ÷ 24 ≈ 8.3). Recompute the range
+with `git rev-list --count <previous-tag>..<tag>` across `git tag | sort -V`; if
+it approaches the default, raise `DEFAULT_SUBJECT_LIMIT` in
 `scripts/changelog_builder.py`.
 
 ### What is dropped first
@@ -115,29 +115,38 @@ floor is visible to the reader it affects.
 
 ### The truncation warning
 
-Truncation is never silent. The builder raises
-`ChangelogTruncationWarning` (a `UserWarning`), and both scripts print the
-report to **stderr** and add a `::warning::` annotation when running under GitHub
-Actions. Nothing is written into `CHANGELOG.md`.
+Truncation is never silent. The builder raises `ChangelogTruncationWarning` (a
+`UserWarning`) from `collect_release_subjects`, and both scripts skip that path and
+print the same report to **stderr** through `emit_selection_report`, which also
+adds a `::warning::` annotation when running under GitHub Actions. Nothing is
+written into `CHANGELOG.md`.
+
+Verbatim report from `v0.19.0..v0.20.0` (24 commits, 11 releasable) selected with
+`--limit 10`, so 10 kept + 1 dropped = 11:
 
 ```text
-[changelog] WARNING: Changelog truncated: kept 8 of 22 releasable commits (limit 8).
-[changelog] WARNING: Dropped 14 entries: 14 internal (docs/chore/test/ci/refactor/style/build) and 0 user-visible (feat/fix/perf/security/breaking).
+[changelog] NOTE: kept 10 of 11 releasable commits; skipped 13 merge/release/skip-marked commit(s) and 0 duplicate subject(s).
+[changelog] WARNING: Changelog truncated: kept 10 of 11 releasable commits (limit 10).
+[changelog] WARNING: Dropped 1 entries: 1 internal (docs/chore/test/ci/refactor/style/build) and 0 user-visible (feat/fix/perf/security/breaking).
 [changelog] WARNING: No user-visible change was lost; only maintainer-facing entries were dropped.
 [changelog] WARNING: Re-run with a higher limit (for example --limit 200) to keep every entry.
 [changelog] WARNING: Dropped entries:
-[changelog] WARNING:   - docs: doc C
-...
+[changelog] WARNING:   - chore(metrics): refresh published_metrics.json from 2026-06-16 full eval
+```
+
+Under GitHub Actions the same report is followed by a single annotation line:
+
+```text
+::warning::Changelog truncated to 10/11 commits (limit 10); dropped 0 user-visible and 1 internal entries. Raise the limit to at least 200.
 ```
 
 The suggested limit is `max(2 × the current limit, the range size, 200)`, so a
 small `--limit` never suggests going *below* the default.
 
-When user-visible changes *are* dropped, the report says so explicitly
-(`User-visible changes were dropped (oldest first). Raise the limit before
-releasing.`) and lists the lost subjects. A run that skipped merge, release,
-`[skip release]` or duplicate commits also prints a `[changelog] NOTE:` line with
-those counts.
+When user-visible changes *are* dropped — `--limit 9` on the same range drops the
+older `feat:` — the "no user-visible change was lost" line is replaced by
+`User-visible changes were dropped (oldest first). Raise the limit before
+releasing.` and the lost subjects are listed with them.
 
 **Before releasing** with a warning in the log, re-run with the suggested
 `--limit` value (or edit the `## Unreleased` section by hand) so no change ships
@@ -232,7 +241,7 @@ Fix:
 Symptoms:
 
 - `Update Changelog On Main` or the release job logs `[changelog] WARNING: Changelog truncated: kept N of M releasable commits`.
-- GitHub annotates the run with `Changelog truncated to N/M commits`.
+- GitHub annotates the run with `Changelog truncated to N/M commits (limit L); dropped U user-visible and I internal entries.`
 
 Cause:
 
@@ -262,10 +271,20 @@ only. Requires `RELEASE_AUTOMATION_PAT`; without it the run lands in
   checks.
 - The MCP wire contract is gated separately, by `scripts/smoke_mcp_stdio.py` in
   the `Tests` workflow (3.13/ubuntu only): 8 checks — the negotiated protocol
-  version, both `outputSchema` arms per tool, the tool name/count set, clean
-  `memory_status` / `memory_recall` frames, a non-ASCII round trip, and unknown
-  arguments rejected with `isError: true`. `publish.yml` does **not** re-run it,
-  so a release ships only what already passed `Tests` on the tagged commit.
+  version, the published `outputSchema` arms, the published `inputSchema` set,
+  the tool name/count cross-check against `docs/TOOLS.md`, a clean
+  `memory_status` frame, a clean `memory_recall` frame, a non-ASCII round trip,
+  and an unknown argument rejected with `isError: true`. `publish.yml` does
+  **not** re-run it, so a release ships only what already passed `Tests` on the
+  tagged commit.
+- `scripts/release.py` refuses to start on a dirty tree, on a branch other than
+  `main`, when the target tag already exists locally or on `origin`, or when the
+  version is already on PyPI (`--skip-pypi-check` skips the last check). Any
+  failing quality or release gate restores `pyproject.toml` and `CHANGELOG.md`
+  and exits non-zero without committing, tagging or pushing. `--dry-run` runs the
+  checks and prints the changelog selection report but writes nothing and runs no
+  gates; `--no-push` commits and tags, then prints the push command to run by
+  hand.
 - `ruff` is pinned to `>=0.7.0,<0.17` with an explicit rule set in
   `pyproject.toml`. `Tests` and `Publish to PyPI` both lint `src/` and `tests/`.
   `scripts/` is linted by `scripts/pre_push_check.py` (and locally), so the
@@ -276,5 +295,6 @@ only. Requires `RELEASE_AUTOMATION_PAT`; without it the run lands in
 - A push to `main` runs `Update Changelog On Main`, `Automated Release On Main`,
   `Tests` and `Release Docs Guard`; a `v*` tag runs `Publish to PyPI`. The
   release bot skips the two `main` automation workflows to avoid loops.
-- `Release Docs Guard` triggers on the release-automation files themselves plus
-  `docs/RELEASE_AUTOMATION.md` and `README.md`, on both push and pull request.
+- `Release Docs Guard` triggers when a release-automation path changes — the seven in
+  `RELEASE_AUTOMATION_PATHS` plus the guard's own `scripts/check_release_docs.py` — or
+  when `docs/RELEASE_AUTOMATION.md` / `README.md` change, on both push and pull request.

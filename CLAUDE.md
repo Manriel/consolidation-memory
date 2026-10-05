@@ -76,14 +76,15 @@ python scripts/generate_tool_reference.py --check   # docs/TOOLS.md is up to dat
 ```
 
 CI runs the same set, with two differences: `ruff` is `src/ tests/` only, and the
-smoke, lint, type and security steps run on 3.13/ubuntu (the test matrix itself spans
-3.10–3.13 × linux/macOS/Windows).
+smoke, lint, type and security steps are 3.13/ubuntu while the matrix spans 3.10–3.13
+× ubuntu/windows.
 
 ## Lint and typing facts
 
 - `[tool.ruff.lint]` writes the enforced `select` out in full; there is no `ignore` and
-  no `per-file-ignores`. Every suppression is a `# noqa` on its own line, carrying its
-  reason. Bandit is the security gate: `bandit -q -ll -r src scripts -s B608,B110`.
+  no `per-file-ignores`. Every suppression is a `# noqa` on the line it applies to,
+  carrying its reason. Bandit is the security gate:
+  `bandit -q -ll -r src scripts -s B608,B110`.
 - `ruff>=0.7.0,<0.17` carries an upper bound on purpose — the rule set is explicit,
   but a bump can still add, rename or reclassify rules.
 - BLE001 is **not** selected: `except Exception` in `tests/` is deliberate and not a
@@ -117,7 +118,7 @@ refactors; strike items off as they close.
   `docs/ROADMAP.md` all say so. The published `schemas.py` description — and
   `docs/TOOLS.md`, which is generated from it — still does not, and the tool
   description is what an agent host reads.
-- **P1 Unvalidated contract subtrees**: 32 of 182 success-arm properties publish as
+- **P1 Unvalidated contract subtrees**: 32 of 184 success-arm properties publish as
   `dict[str, Any]` / `list[dict[str, Any]]`, so their subtrees are validated as "is
   an object" and nothing more. `tests/test_output_contract_payload_typing.py` ratchets
   the number; do not raise it.
@@ -135,9 +136,10 @@ refactors; strike items off as they close.
 - ~~Scope on audit APIs~~: `contradictions`, `decay_report`, `consolidation_log`, `status` take resolved default scope; explicit `scope` narrows further; `global_scope=True` for the corpus-wide view.
 - ~~`content_type` validation~~: shared `validate_episode_content_type()` in `types.py`.
 - ~~`trust_profile` in scoped `status()`~~: `get_claim_trust_stats`, `count_active_challenged_claims`, `get_recently_contradicted_topic_ids` accept `scope`.
-- ~~`coding_agent_eval` CI gate~~: `quick` mode in the `novelty_gates` job; `real_world_eval` stays manual.
+- ~~Benchmark eval gates~~: `novelty_eval`, `coding_agent_eval` (`quick`) and `real_world_eval` (`ci`, seeded fixture) all gate in the `novelty_gates` job; the `full` runs are nightly and release-time.
 - ~~`embedding_disk_cache` cross-process lock~~: `.embedding_cache_write.lock` via `process_write_lock.py`.
 - ~~MCP trust boundary~~: a documented policy in `SECURITY.md`; the supported line moves with each minor.
+- ~~`docs/MCP_GUIDE.md` drift~~: protocol ladder including the silent `2026-07-28` → `2025-11-25` downgrade, the 30s client-init budget, `STATUS_LIGHTWEIGHT`, `CONSOLIDATION_MEMORY_CONSOLIDATION_AUTO_RUN`, and the absent `namespace.display_name`.
 - ~~Hygiene surface parity~~: `memory_hygiene_scan` / `memory_hygiene_apply` on MCP, REST, OpenAI dispatch, CLI, web UI, desktop.
 - ~~`rest.py` E402~~: imports ordered above type aliases.
 - ~~`tool_adapter` recall parity~~: shared deferred-knowledge and deadline semantics across MCP/REST/OpenAI.

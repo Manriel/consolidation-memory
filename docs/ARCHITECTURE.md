@@ -28,6 +28,11 @@ This document describes the current architecture of `consolidation-memory` as im
 - Private `mcp` SDK seam (schema publication, strict tool arguments): `mcp_compat.py`
 - REST API: `rest.py` (+ `ops_routes.py` for `/ops/*` maintenance routes)
 - Python API: `client.py`
+- Package version: `__init__.__version__`, read from the installed distribution
+  metadata and falling back to the `0.0.0` sentinel when that metadata is
+  unavailable (an uninstalled source checkout, or a subprocess whose interpreter
+  cannot see the dist-info). Only `PackageNotFoundError` is tolerated; any other
+  lookup failure propagates.
 - OpenAI tool schemas/dispatch: `schemas.py`
 - Browser UI: `web_ui.py` + `web/` (served at `/ui/` by the REST app)
 - TUI dashboard: `dashboard.py` + `dashboard_data.py` (direct SQLite reads)
@@ -82,6 +87,10 @@ runs at import and in `lifespan` and fails loudly on a success-only schema.
 
 Orchestration and surfaces:
 
+- `__init__.py`: the package's public API — 46 names in a lazy export table
+  (`_LAZY_IMPORTS`) resolved through `__getattr__`, `MemoryClient` plus 45
+  enums, result and scope types from `types.py`, so a bare
+  `import consolidation_memory` loads neither faiss nor numpy.
 - `client.py`: orchestration, lifecycle, tool-facing operations, scope resolution.
 - `client_runtime.py`: consolidation scheduler and backend health runtime helpers.
 - `config.py`: `Config` dataclass, TOML/env loading, derived paths, validation.
@@ -132,8 +141,8 @@ Storage and retrieval:
   `outcomes`, `export`, `stats`).
 - `db/scope.py`: scope resolution, exact-match filters over the 11 canonical
   scope keys, and scope discovery (`list_scope_usage`).
-- `backends/`: embedding and LLM backends (`fastembed`, `lmstudio`, `ollama`,
-  `openai`, `base`).
+- `backends/`: embedding and LLM backends (`base`, `fastembed_backend`,
+  `lmstudio`, `ollama`, `openai_backend`).
 
 Operations and integration:
 
