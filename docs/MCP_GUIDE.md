@@ -6,7 +6,7 @@ system for safe sharing. This guide covers everything the README's quick-start
 does not: the wire contract, scopes and policies, the error model, every
 environment variable, and end-to-end recipes.
 
-- **Full tool reference** (all29 tools, generated from the published schemas):
+- **Full tool reference** (all 29 tools, generated from the published schemas):
   [TOOLS.md](TOOLS.md)
 - **Quick start / host config**: [README — Connect your agent](../README.md#connect-your-agent-mcp)
 
@@ -14,10 +14,10 @@ environment variable, and end-to-end recipes.
 
 | Area | What the server gives you |
 | --- | --- |
-| Tools |29 tools (full profile): store/recall/search, claims graph, outcomes, consolidation, drift detection, hygiene, policies, scope discovery |
+| Tools | 29 tools (full profile): store/recall/search, claims graph, outcomes, consolidation, drift detection, hygiene, policies, scope discovery |
 | Profiles | `full` (everything) or `simple` (3 conversational tools) via `CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE` |
-| Protocol | MCP up to spec **2026-07-28**; negotiates with older hosts down to `2024-11-05` |
-| Results | Typed `outputSchema` per tool, `structuredContent` object + UTF-8 JSON text, strict input validation |
+| Protocol | Handshake revisions `2024-11-05` … `2025-11-25`; `2026-07-28` only for modern-envelope hosts — the host proposes, the SDK settles ([details](#protocol-compatibility)) |
+| Results | Typed `outputSchema` per tool, `structuredContent` object + UTF-8 JSON text, unknown input arguments rejected on every surface |
 | Scopes | Envelope-based isolation (namespace / app / agent / session / project) with discovery and access policies |
 | Reliability | Per-tool timeouts, recall and drift fallback chains, `isError` failures with actionable text |
 | Surfaces | Same dispatch and semantics behind MCP, REST, Python SDK and OpenAI-compatible schemas |
@@ -55,20 +55,38 @@ Drop-in host configs: [Cursor](../examples/cursor-integration/README.md) ·
 
 | Profile | Tools | When |
 | --- | --- | --- |
-| `full` (default) | all29 | Local agent with the whole memory toolkit |
+| `full` (default) | all 29 | Local agent with the whole memory toolkit |
 | `simple` | `memory_recall`, `memory_remember`, `memory_ask` | Small context budget, chat-style memory only |
 
 Select with `"CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE": "simple"`.
 
 ## Protocol compatibility
 
-The server negotiates the highest protocol version the host offers:
+The repository pins **no** protocol version. The host proposes one, the SDK
+settles: `mcp/server/runner.py` answers
+`negotiated = requested if requested in HANDSHAKE_PROTOCOL_VERSIONS else
+LATEST_HANDSHAKE_VERSION`, so the server never chooses a version the host did
+not ask for. The revision ladder comes from the installed library
+(`mcp_types/version.py`), and the range this project supports is
+`mcp[cli]>=2.3.0,<3` ([pyproject.toml](../pyproject.toml)).
 
-| Version | Role |
+The era is fixed by the client's **first** request
+(`runner.serve_dual_era_loop`): an `initialize` handshake opens the handshake
+era, any other request carrying the per-request `_meta` envelope opens the
+modern era. A session cannot mix the two.
+
+| Revision | How it is reached |
 | --- | --- |
-| `2026-07-28` | Modern current spec: structured results with `resultType`, tool output schemas, caching metadata |
-| `2025-11-25` | Previous spec revision, still fully supported |
-| `2025-06-18`, `2025-03-26`, `2024-11-05` | Handshake-era versions for older hosts |
+| `2026-07-28` | Modern era only (`MODERN_PROTOCOL_VERSIONS`): no `initialize`; the version travels per request in `params._meta` under `io.modelcontextprotocol/protocolVersion`. Any other value in the envelope is refused with `UNSUPPORTED_PROTOCOL_VERSION`, naming the served list |
+| `2025-11-25` | Handshake ceiling (`LATEST_HANDSHAKE_VERSION`) — the newest revision an `initialize` can settle on, and the counter-offer for an unknown request |
+| `2025-06-18`, `2025-03-26` | Handshake era, served as offered |
+| `2024-11-05` | Handshake floor (`OLDEST_SUPPORTED_VERSION`) — what `initialize` settles on for older hosts |
+
+An `initialize` that requests `2026-07-28` is answered with `2025-11-25`:
+`2026-07-28` is not in `HANDSHAKE_PROTOCOL_VERSIONS`, so the downgrade is
+silent and deliberate. Read the negotiated revision from the `initialize`
+result rather than assuming the offer survived — the stdio smoke gate asserts
+exactly that against the ladder read out of the installed library.
 
 Nothing host-side is required to benefit from structured results: every
 version receives `content` text, and hosts that understand `structuredContent`
@@ -76,21 +94,30 @@ and `outputSchema` get the typed channel as well.
 
 ## Result contract
 
-Every tool call returns three synchronized pieces:
+A tool that **executes** returns three synchronized pieces:
 
-1. **`content`** — a single text block with the payload serialized as JSON.
-   UTF-8 end to end: non-ASCII text is literal, never `\uXXXX`-escaped, and the
-   text is byte-identical to what a write→read round trip stored.
+1. **`content`** — one text block. On a successful call it is the payload
+   serialized as JSON; on `isError: true` it is an actionable prose message,
+   not the payload (`_tool_error_result` sets `text=message`).
 2. **`structuredContent`** — the same payload as a JSON object, for
-   applications that consume data rather than text.
+   applications that consume data rather than text. Present on both the
+   success and the `isError` paths (where it is `{"error": "..."}`); an
+   argument rejected before the tool body runs has no `structuredContent` at
+   all, only text.
 3. **`outputSchema`** (published in `tools/list`) — a JSON Schema shaped as
    `anyOf[success, error]`: the success arm describes every field of the
    payload, the error arm is `{"error": "..."}`. Clients **should** validate
    `structuredContent` against it; the server validates every successful
    result against the success arm before it leaves the process.
 
-Unknown input arguments are **rejected** (`additionalProperties: false` on
-every `inputSchema`) instead of being silently dropped.
+The text block is the SDK's own `indent=2` JSON serialization of the payload,
+so a nested string inside it is JSON-escaped like any other: `json.loads` it
+before comparing bytes. `structuredContent` is the byte-faithful channel — it
+leaves the process as raw UTF-8, so a store→read round trip returns the stored
+bytes unchanged, literal `\uXXXX` text in the stored content included.
+
+Unknown input arguments are **rejected** on every surface, not silently
+dropped. See [Surfaces parity](#surfaces-parity).
 
 ### Example — success
 
@@ -171,7 +198,16 @@ model (tool execution errors are feedback, not protocol failures).
 | Nothing lost | Undeclared payload keys pass through (`additionalProperties: true` on outputs); text and structured channels carry the same data |
 | Typed outputs | Every success payload validates against the published `outputSchema` success arm (strict types, required fields per the dispatcher's shapes) |
 | Honest failures | Timeouts, validation errors and dispatch failures are `isError: true`, never a soft `{"error": ...}` success |
-| Stable bytes | Stored text survives write→read round trips byte-for-byte; no Unicode re-encoding on the wire |
+| Stable bytes | `structuredContent` leaves the process as raw UTF-8, so stored text survives a write→read round trip byte-for-byte; the text block is a JSON serialization of the same payload, so decode it before comparing bytes |
+| Two arms, always | Every tool in `tools/list` publishes an `anyOf[success, error]` `outputSchema`; a tool registered after startup is healed into the contract on its next `tools/list` rather than publishing success-only |
+| Fail loudly at startup | If a tool would publish a success-only schema, the self-check refuses to serve instead of shipping a contract that rejects every `{"error": ...}` payload |
+
+The startup self-check is why the two rows above hold rather than degrade: a
+private `mcp` rename that used to strip `outputSchema` from every tool, or
+leave a success-only one, now fails the boot with a message naming the
+installed SDK version and the supported range
+([mcp_compat.py](../src/consolidation_memory/mcp_compat.py)) instead of
+reaching clients as a lying contract.
 
 ## Scopes and sharing
 
@@ -186,10 +222,14 @@ legacy defaults apply: namespace `default`, app client
 | Section | Keys | Meaning |
 | --- | --- | --- |
 | `namespace` | `slug`, `sharing_mode`, `display_name` | Top-level sharing boundary (`private` / `shared` / `team` / `managed`) |
-| `app_client` | `name`, `app_type`, `provider`, `external_key` | Calling application (`mcp`, `python_sdk`, `rest`, `cli`, ...) |
+| `app_client` | `name`, `app_type`, `provider`, `external_key` | Calling application (`mcp`, `python_sdk`, `rest`, `openai_agents`, `langgraph`, `cli`, ...) |
 | `agent` | `name`, `external_key` | Logical agent inside the app (`null` when unused) |
 | `session` | `external_key`, `session_kind` | Short-lived interaction context (`conversation`, `thread`, `workflow`, `job`) |
 | `project` | `slug`, `display_name`, `root_uri`, `repo_remote`, `default_branch` | Repository/project identity |
+
+This is the **input** envelope; every key above is accepted on the way in. The
+`memory_scope_list` output is narrower — see
+[Discovering existing scopes](#discovering-existing-scopes).
 
 `scope` accepts three shapes:
 
@@ -224,7 +264,7 @@ exists:
     "scopes": [
       {
         "scope": {
-          "namespace": { "slug": "default", "sharing_mode": "private", "display_name": null },
+          "namespace": { "slug": "default", "sharing_mode": "private" },
           "app_client": { "name": "legacy_client", "app_type": "python_sdk", "provider": null, "external_key": null },
           "agent": null,
           "session": null,
@@ -242,17 +282,46 @@ exists:
 }
 ```
 
+The returned `namespace` carries `slug` and `sharing_mode` only — there is no
+`display_name` to read. The `scope` *argument* still accepts one
+(`coerce_scope_envelope` keeps it as optional input), so an envelope is
+reusable in both directions.
+
 - Ordering is deterministic: most recently used first, stable tie-break.
 - Page with `limit` (1–1000) + `offset`; `message` tells you where the window
   sits (`"Showing N of T scopes at offset ..."`) and `total` is the full count.
 - Each returned `scope` can be passed **verbatim** back as the `scope`
   argument of any other tool.
+- Grouping uses all 11 canonical scope keys — the same set the read and write
+  filters match on — so two scopes that differ only in `agent_name`,
+  `session_kind`, `app_client_external_key`, `app_client_provider` or
+  `namespace_sharing_mode` stay separate entries with their own counts instead
+  of being merged and summed.
+- Counts cover **live rows only**: `forget()` tombstones are excluded from
+  `episodes` and `records`. `knowledge_topics` has no `deleted` column, so
+  topic rows are counted as stored; there is no tombstone counter for it.
+- Display-only project metadata (`display_name`, `root_uri`, `repo_remote`,
+  `default_branch`) is aggregated with `MAX()`, so the value is a
+  deterministic function of the group's rows rather than whichever row a
+  bare column came from.
+
+#### Discovery tools are not read-visibility-filtered
+
+`memory_scope_list` and `memory_policy_list` are **not** filtered by
+`read_visibility` — they are deployment-topology audit tools, and the ACL
+layer separates principals inside one deployment rather than tenants. On stdio
+the subprocess already holds full database access, so filtering a discovery
+listing would hide the scopes an operator is trying to audit without removing
+any real capability. Do not expose the MCP subprocess to untrusted
+multi-tenant environments without OS-level isolation. Full reasoning:
+**[ACL.md — Trust boundary](ACL.md#trust-boundary)**.
 
 ### Policies and ACL
 
 Scopes decide *visibility*; policies decide *permission*:
 
-- `memory_policy_list` — persisted access policies and ACL bindings.
+- `memory_policy_list` — persisted access policies and ACL bindings, and
+  (like scope discovery) not filtered by `read_visibility`.
 - `memory_policy_grant` — create/update a binding for a principal with
   `write_mode` (`allow`/`deny`) and `read_visibility`
   (`private`/`namespace`/`project`).
@@ -269,11 +338,20 @@ configuration, worked examples: **[ACL.md](ACL.md)**.
 | Kind | Transport shape | Example |
 | --- | --- | --- |
 | Protocol error | JSON-RPC `error` (no result) | Unknown tool, malformed request |
-| Tool execution error | Result with `isError: true` + actionable text + `structuredContent.error` | Timeout, bad input, dispatch failure |
-| Business outcome | Result with `isError: false` and a status field | `status: "not_found"`, `status: "write_denied"` |
+| Tool execution error | Result with `isError: true` + actionable text + `structuredContent.error` (an argument rejected before the body runs carries the text only) | Timeout, bad input, dispatch failure |
+| Business outcome | Result with `isError: false` and a status field | `status: "not_found"`, `status: "write_denied"`, `status: "dry_run"` |
 
 Only the middle row is `isError: true`; success-shaped payloads with a
 non-happy `status` are **not** failures — callers branch on the status.
+
+### `memory_hygiene_apply` status
+
+`status` is `dry_run` (preview, corpus untouched) or `applied` (cleanup
+committed) — it is never `ok`. Both modes send the **same** keys: `status`,
+`episode_targets`, `episode_ids`, `forgotten`, `not_found`, `expire_orphans`,
+`orphan_repair`. Only `status` and the `forgotten` / `not_found` counters
+differ, and both counters are `0` on a dry run, so a client can parse one shape
+regardless of `dry_run`.
 
 ### Timeout resolution
 
@@ -287,7 +365,10 @@ Per tool: `CONSOLIDATION_MEMORY_TIMEOUT_<TOOL>` → per-tool default →
 | `memory_claim_search`, `memory_decay_report`, `memory_timeline`, `memory_browse` | 45s | `memory_ask`, `memory_store_batch`, `memory_correct` | 60s |
 | `memory_hygiene_scan` | 60s | `memory_hygiene_apply`, `memory_export` | 180s |
 | `memory_compact` | 120s | `memory_consolidate` | 600s |
-| `memory_policy_list`, `memory_policy_grant` | 20s | `memory_recall`, `memory_detect_drift`, `memory_scope_list` | see below |
+| `memory_policy_list`, `memory_policy_grant` | 20s | `memory_recall`, `memory_detect_drift` | see below |
+
+`memory_scope_list` is the one tool with no per-tool default: it runs on the
+generic `CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS` fallback (60s).
 
 Dedicated budgets (own environment variables):
 
@@ -296,7 +377,12 @@ Dedicated budgets (own environment variables):
 | `CONSOLIDATION_MEMORY_RECALL_TIMEOUT_SECONDS` | 60s | Semantic recall phase of `memory_recall` / `memory_ask` |
 | `CONSOLIDATION_MEMORY_RECALL_FALLBACK_TIMEOUT_SECONDS` | 10s | Keyword-only fallback after a recall timeout |
 | `CONSOLIDATION_MEMORY_DRIFT_TIMEOUT_SECONDS` | 90s | Drift scan (first attempt with `base_ref`) |
-| `CONSOLIDATION_MEMORY_CLIENT_INIT_TIMEOUT_SECONDS` | 90s | Lazy client/engine startup on first tool call |
+| `CONSOLIDATION_MEMORY_CLIENT_INIT_TIMEOUT_SECONDS` | 30s | Lazy client/engine startup on first tool call |
+
+Every default above is the code default, not a recommendation: `server.py`
+reads the variable at import and falls back to the listed value. A budget of
+`0` or a negative number is not "unbounded" — the resolver substitutes its own
+ceiling instead (180s drift, 90s client init, 90s recall, 20s recall fallback).
 
 ### Fallback chains
 
@@ -316,14 +402,19 @@ Dedicated budgets (own environment variables):
 | Symptom | Fix |
 | --- | --- |
 | `... timed out after Ns. Raise CONSOLIDATION_MEMORY_TIMEOUT_...` | Raise the named variable or reduce work (`n_results`, corpus size) |
-| `Extra inputs are not permitted` | Remove the unknown argument — the published `inputSchema` is the contract |
+| `Extra inputs are not permitted` | Remove the unknown argument — the published `inputSchema` is the contract. MCP reports it as `isError: true`, REST as HTTP 422, the dispatch seam as `ToolContractError` ([details](#surfaces-parity)) |
 | Recall answers feel stale right after startup | `CONSOLIDATION_MEMORY_DEFERRED_KNOWLEDGE_RETRY_SECONDS` (default `3`) delays knowledge inclusion; set `0` for immediate reads |
 | First call is slow | Client init + warmup run lazily; prewarm with `CONSOLIDATION_MEMORY_WARMUP_ON_START=1` (default on) and `CONSOLIDATION_MEMORY_PRELOAD_SCIPY_ON_START=1` |
 | Two server processes fight over the DB | The stdio singleton guard serializes per project; tune `CONSOLIDATION_MEMORY_STDIO_SINGLETON` / `..._TAKEOVER_TIMEOUT_SECONDS` |
 
 ## Environment reference
 
-All variables are prefixed `CONSOLIDATION_MEMORY_`.
+All variables are prefixed `CONSOLIDATION_MEMORY_`. Most are read directly
+from `os.environ` by the MCP runtime; the rest are `Config` fields, and a
+field is addressable as `CONSOLIDATION_MEMORY_<FIELD>` —
+`CONSOLIDATION_AUTO_RUN` is the field, so its variable is
+`CONSOLIDATION_MEMORY_CONSOLIDATION_AUTO_RUN`. The tables below name the
+variable without that prefix.
 
 ### Paths and projects
 
@@ -340,24 +431,29 @@ All variables are prefixed `CONSOLIDATION_MEMORY_`.
 | `EMBEDDING_BACKEND` | `fastembed` | `fastembed`, `lmstudio`, `openai`, `ollama` |
 | `LLM_BACKEND` | `lmstudio` | `lmstudio`, `openai`, `ollama`, `disabled` |
 | `FASTEMBED_CACHE_DIR` | platform cache | Where the embedding model is downloaded |
-| `CONSOLIDATION_AUTO_RUN` | `true` | Background consolidation scheduler |
+
+### Consolidation
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CONSOLIDATION_AUTO_RUN` | `true` | `Config` field gating automatic consolidation (`client.py`, `client_runtime.py`, the maintenance daemon) |
+| `MCP_AUTO_CONSOLIDATE` | off | The MCP client's own `auto_consolidate` flag: consolidate after stores when idle |
 
 ### MCP runtime
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `MCP_TOOL_PROFILE` | `full` | `full` or `simple` (3 tools) |
-| `MCP_AUTO_CONSOLIDATE` | off | Let the engine consolidate after stores when idle |
 | `MCP_BLOCKING_WORKERS` | 16 | Worker threads for blocking tool bodies |
 | `WARMUP_ON_START` | on | Warm caches at server startup |
-| `WARMUP_START_DELAY_SECONDS` / `WARMUP_AWAIT_SECONDS` | — | Warmup scheduling knobs |
+| `WARMUP_START_DELAY_SECONDS` / `WARMUP_AWAIT_SECONDS` | 0.25 / 0 | Warmup scheduling knobs |
 | `WARMUP_PRIME_TOPIC_CACHE` / `WARMUP_PRIME_RECORD_CACHE` | `true` | Prime recall caches at warmup |
 | `WARMUP_PRIME_CLAIM_CACHE` | `false` | Prime the claim cache (heavier) |
-| `PRELOAD_SCIPY_ON_START` / `PRELOAD_NUMERIC_BACKENDS_ON_START` | — | Import heavy numeric deps up front (avoids first-call stalls) |
-| `STATUS_LIGHTWEIGHT` | off | Default of `memory_status(lightweight=true)`: skip markdown scans |
-| `IDLE_TIMEOUT_SECONDS` | — | Exit stdio server after N idle seconds (`0` = never) |
-| `IDLE_CHECK_INTERVAL_SECONDS` | — | Idle sweep cadence |
-| `STDIO_SINGLETON` / `STDIO_SINGLETON_TAKEOVER_TIMEOUT_SECONDS` | on / — | One server process per project; takeover wait |
+| `PRELOAD_SCIPY_ON_START` / `PRELOAD_NUMERIC_BACKENDS_ON_START` | on / on | Import heavy numeric deps up front (avoids first-call stalls) |
+| `STATUS_LIGHTWEIGHT` | on | Default of `memory_status(lightweight=true)`: skip markdown scans |
+| `IDLE_TIMEOUT_SECONDS` | 900 | Exit stdio server after N idle seconds (`0` = never) |
+| `IDLE_CHECK_INTERVAL_SECONDS` | 15 | Idle sweep cadence |
+| `STDIO_SINGLETON` / `STDIO_SINGLETON_TAKEOVER_TIMEOUT_SECONDS` | on / 10 | One server process per project; takeover wait |
 | `DUMP_STACKS_ON_CLIENT_INIT_TIMEOUT` | off | Thread dump when client init hangs |
 
 ### Timeouts and recall
@@ -370,7 +466,7 @@ All variables are prefixed `CONSOLIDATION_MEMORY_`.
 | `RECALL_FALLBACK_TIMEOUT_SECONDS` | 10 | Keyword fallback phase |
 | `RECALL_DEADLINE_MARGIN_RATIO` | 0.85 | Share of the budget reserved before fallback |
 | `DRIFT_TIMEOUT_SECONDS` | 90 | Drift scan budget |
-| `CLIENT_INIT_TIMEOUT_SECONDS` | 90 | Client/engine startup budget |
+| `CLIENT_INIT_TIMEOUT_SECONDS` | 30 | Client/engine startup budget |
 | `DEFERRED_KNOWLEDGE_RETRY_SECONDS` | 3 | Wait before knowledge is guaranteed fresh in recall |
 
 ### REST (when the HTTP surface is enabled)
@@ -443,6 +539,32 @@ the same dispatch (`tool_dispatch.py`) and canonical query layer — tool names,
 parameters and payload shapes match across surfaces. The only surface-specific
 parts are transport encoding and the MCP-only bits documented here
 (`outputSchema` publication, `isError` mapping, stdio lifecycle).
+
+### One input contract, four enforcement points
+
+Every published `inputSchema` declares `additionalProperties: false`, and
+`additionalProperties: false` is **enforced**, not just advertised. The
+allowed set is derived once from the published schemas
+(`tool_dispatch.accepted_argument_names`), and the same set is checked where
+the request enters:
+
+| Surface | How the rejection surfaces |
+| --- | --- |
+| MCP | `isError: true` with text naming the offending key, no `structuredContent` — the SDK's argument model validates before the tool body runs |
+| REST | HTTP **422** from the request model (`extra="forbid"`), with the offending keys in `loc`/`msg`; a `ToolContractError` from dispatch also maps to 422 |
+| OpenAI / dispatch | `ToolContractError` propagates instead of becoming a soft `{"error": ...}` payload — a silent drop would mean the call ran with different arguments than asked |
+| Desktop | the dispatch seam's `ToolContractError`, from the same `execute_tool_call` |
+
+Deliberate exception: the nested objects inside `episodes` and `code_anchors`
+stay permissive, because the published schema types them as plain objects. The
+top-level bodies are strict, the nested maps are not. The CLI has its own
+command surface and does not take tool arguments, so it is not part of this
+contract.
+
+A startup self-check cross-checks the SDK-enforced argument set against the
+dispatch set for every registered tool and refuses to serve on divergence, so
+a signature that drifts from its published schema is a boot failure rather than
+a surface that quietly accepts what the others reject.
 
 - OpenAI tool schemas: [`src/consolidation_memory/schemas.py`](../src/consolidation_memory/schemas.py)
 - REST surface: [README — REST](../README.md#rest-api)

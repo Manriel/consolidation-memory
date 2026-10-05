@@ -47,8 +47,8 @@ carries
 so agents branch on `status` and pipelines do not treat it as an outage.
 Batch stores report the denial per episode inside `results`.
 
-Not gated by `write_mode`: policy administration itself, maintenance
-operations (`memory_hygiene_*`, `memory_compact`, `memory_export`,
+Not gated by `write_mode`: policy administration itself, scope discovery,
+maintenance operations (`memory_hygiene_*`, `memory_compact`, `memory_export`,
 `memory_consolidate`, `memory_detect_drift`), and the transport — those are
 covered by the trust boundary below.
 
@@ -308,7 +308,10 @@ Scope layout:
 
 Verification loop (run from the counterpart's envelope):
 
-1. `memory_scope_list` — the `contract` scope shows up with its counts.
+1. `memory_scope_list` — the `contract` scope shows up with its counts. The
+   listing is not read-visibility-filtered, so this is a whole-deployment
+   topology check, not a check of what this agent may read; counts cover live
+   rows only, so a forgotten episode stops counting.
 2. `memory_recall` with the contract scope — the published fact is visible.
 3. `memory_recall` with a service scope — sibling internals are **not**.
 4. A probe write with a `write_mode: deny` principal — `status: "write_denied"`.
@@ -317,7 +320,9 @@ What belongs in the shared scope is a deliberate team decision (contract
 facts, rollout rules, published integration docs — not work-in-progress
 notes). In practice that boundary is an instruction in each agent's
 system prompt plus distinct principals per service, so an audit of
-`policy list` and `memory_scope_list` matches the intended topology.
+`policy list` and `memory_scope_list` matches the intended topology. Neither
+listing is gated by `read_visibility` or `write_mode`; see
+[Trust boundary](#tools-intentionally-outside-the-read-filter).
 
 ## Seeing what is in effect
 
@@ -330,11 +335,35 @@ system prompt plus distinct principals per service, so an audit of
 ## Trust boundary
 
 ACL is **data-level sharing control between principals inside one
-deployment** — it is not authentication. On MCP stdio any process that can
-launch the server has full database access (see
-[SECURITY.md](../SECURITY.md#trust-boundaries)); REST requires a bearer
-token beyond loopback. Use ACL to separate projects, agents and apps —
-use the transport and OS permissions to separate tenants.
+deployment** — it is not authentication, and it does not separate tenants.
+On MCP stdio any process that can launch the server has full database access
+(see [SECURITY.md](../SECURITY.md#trust-boundaries)); REST requires a bearer
+token beyond loopback. Use ACL to separate projects, agents and apps — use the
+transport and OS permissions to separate tenants.
+
+### Tools intentionally outside the read filter
+
+Two tools are deployment-topology **audit** tools and are deliberately not
+filtered by `read_visibility`:
+
+| Tool | What it reports | Why it is unfiltered |
+| --- | --- | --- |
+| `memory_policy_list` / `policy list` / `GET /memory/policy` | Every persisted ACL binding | The question an operator asks is "what did we grant", not "what may this principal see"; filtering the grant table makes a misconfigured binding invisible to the audit that would find it |
+| `memory_scope_list` / `GET /memory/scopes` | Every scope that has stored rows, with per-table counts | The question is "does the data layout match the intended topology"; hiding the scopes a principal cannot read would defeat the audit |
+
+The consequence is deliberate and worth stating plainly: on a shared
+deployment, a caller that can invoke these tools learns the shape of the
+whole corpus (which namespaces, projects, app clients and agents exist, and
+roughly how much each holds) even when its own `read_visibility` is `private`.
+It does **not** learn the contents — no read filter is bypassed, and no row is
+read through this path.
+
+This is acceptable exactly when the transport is: the stdio subprocess is
+inherited by whoever launched it, so the caller already has full database
+access and the listing adds no privilege; a REST deployment is bounded by the
+bearer token and the bind address. Do **not** expose the MCP subprocess to
+untrusted multi-tenant environments without OS-level isolation (separate user,
+container, VM or equivalent) — ACL will not do it for you.
 
 ## Executable specification
 
@@ -346,8 +375,18 @@ MCP, REST and OpenAI surfaces:
 - persisted `read_visibility` enforced across surfaces;
 - `memory_forget` / `memory_protect` / `memory_correct` deny paths.
 
+The input contract is strict on every surface, not only MCP: unknown top-level
+arguments are rejected from one shared allowed-argument set derived from the
+published `inputSchema` — HTTP 422 on REST, `ToolContractError` on the
+dispatch seam — so a body that MCP refuses cannot be replayed through another
+surface. Nested objects in `episodes` / `code_anchors` stay permissive because
+the published schema types them as plain objects. Wire details:
+[MCP guide — Surfaces parity](MCP_GUIDE.md#surfaces-parity).
+
 ## Related
 
 - [MCP guide — scopes and policies](MCP_GUIDE.md#scopes-and-sharing)
+- [MCP guide — discovering existing scopes](MCP_GUIDE.md#discovering-existing-scopes)
+- [MCP guide — surfaces parity](MCP_GUIDE.md#surfaces-parity)
 - [Architecture](ARCHITECTURE.md) — `db/scope.py`, `policy_engine.py`
 - [Security policy](../SECURITY.md)
