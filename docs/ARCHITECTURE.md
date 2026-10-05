@@ -25,6 +25,7 @@ This document describes the current architecture of `consolidation-memory` as im
 - CLI entrypoint: `cli.py`
 - MCP server: `server.py`
 - MCP output contracts (published `outputSchema`): `tool_contracts.py`
+- Private `mcp` SDK seam (schema publication, strict tool arguments): `mcp_compat.py`
 - REST API: `rest.py`
 - Python API: `client.py`
 - OpenAI tool schemas/dispatch: `schemas.py`
@@ -34,21 +35,60 @@ This document describes the current architecture of `consolidation-memory` as im
 
 All surfaces route to `MemoryClient` and canonical query semantics in `query_service.py`.
 
-### MCP result contract
+### Input and output contracts
 
-`server.py` publishes one typed `outputSchema` per tool, built from
-`tool_contracts.py` and shaped as `anyOf[success, error]`: successful
-payloads are validated against the contract before leaving the process,
-execution failures surface as `isError: true` with actionable text, and
-unknown input arguments are rejected. Text and `structuredContent` carry
-the same UTF-8 JSON. Details: [MCP_GUIDE.md](MCP_GUIDE.md).
+Every published tool surface is generated from one place and validated at
+runtime:
+
+- **Input contract** — `tool_dispatch.accepted_argument_names` derives the
+  allowed argument set for every tool from the published
+  `schemas.openai_tools` `inputSchema` (which declares
+  `additionalProperties: false`). `reject_unknown_arguments` runs first in
+  `execute_tool_call` and raises `ToolContractError` naming the offending keys;
+  REST request bodies derive from `rest.StrictRequestModel`
+  (`extra="forbid"`, unknown key → HTTP 422); the MCP SDK validates against a
+  per-tool arg model *before* the handler body runs, so its own
+  `extra="forbid"` patch stays the MCP fast path and cannot be delegated.
+  `server._verify_published_argument_contract()` cross-checks the SDK set
+  against the dispatch set at import and in `lifespan`.
+- **Output contract** — `tool_contracts.py` holds one typed success arm per
+  tool, published as `anyOf[success, error]`; 29 tools share 28 contracts
+  (`memory_store` and `memory_remember` publish the same `StoreOutput`).
+  Successful payloads are validated before leaving the process, execution
+  failures surface as `isError: true` with actionable text, and text and
+  `structuredContent` carry the same UTF-8 JSON.
+  `types.HygieneApplyResult` is the producer-side dataclass for
+  `memory_hygiene_apply`; `_assert_mirrors_result_type` runs at import and
+  breaks the process if a field name, annotation or required-ness diverges
+  from the published contract, so a contract can never reject a payload after
+  the tool already applied its side effects.
+
+Details: [MCP_GUIDE.md](MCP_GUIDE.md).
+
+### MCP SDK compatibility seam
+
+The SDK exposes both contracts only through private, unversioned surfaces.
+`mcp_compat.py` is the **only** module allowed to touch them
+(`ArgModelBase`, `MCPServer._tool_manager`, `ToolManager._tools`,
+`Tool.fn_metadata.output_schema` and the `Tool.__dict__["output_schema"]`
+cached-property entry). A missing module or attribute raises
+`MCPCompatError` naming the installed `mcp` version, the supported range
+(`mcp[cli]>=2.3.0,<3`) and what was probed, instead of degrading silently.
+
+`outputSchema` publication is self-healing: `install_list_tools_heal` wraps the
+public `MCPServer.list_tools` — the single `tools/list` funnel — so a tool
+registered after startup is repaired on the next listing instead of
+publishing success-only forever. `server._verify_published_output_schemas()`
+runs at import and in `lifespan` and fails loudly on a success-only schema.
 
 ## Core Module Map
 
 - `client.py`: orchestration, lifecycle, tool-facing operations, scope resolution.
 - `client_runtime.py`: consolidation scheduler and backend health runtime helpers.
 - `database.py`: backward-compatible facade; re-exports the `db/` persistence API.
-- `db/`: SQLite schema/migrations and domain CRUD (`connection`, `migrations`, `scope`, `episodes`, `topics`, `records`, `claims`, `consolidation`, `outcomes`, `export`, `stats`).
+- `db/`: SQLite schema/migrations and domain CRUD (`connection`, `migrations`, `scope`, `episodes`, `anchors`, `topics`, `records`, `claims`, `consolidation`, `outcomes`, `export`, `stats`).
+- `db/scope.py`: scope resolution, exact-match filters over the 11 canonical
+  scope keys, and scope discovery (`list_scope_usage`).
 - `vector_store.py`: FAISS wrapper, tombstones, compaction, reload signaling.
 - `knowledge_consistency.py`: markdown/DB drift auditing for topic consistency.
 - `markdown_records.py`: markdown-to-record parser used by correction/audits.
@@ -58,10 +98,16 @@ the same UTF-8 JSON. Details: [MCP_GUIDE.md](MCP_GUIDE.md).
 - `claim_graph.py`: deterministic claim canonicalization.
 - `anchors.py`: anchor extraction from episode content.
 - `drift.py`: git-based drift detection and claim challenge flow.
-- `tool_dispatch.py`: canonical tool dispatch shared by MCP, REST and OpenAI surfaces.
+- `tool_dispatch.py`: canonical tool dispatch shared by MCP, REST and OpenAI
+  surfaces, and the one source of truth for allowed tool arguments
+  (`accepted_argument_names`, `reject_unknown_arguments`).
+- `tool_contracts.py`: typed MCP output contracts (published `outputSchema`).
+- `mcp_compat.py`: the only module touching private `mcp` internals; publishes
+  and self-heals `outputSchema`, fails loudly on a missing/renamed surface.
+- `types.py`: shared enums, payload dataclasses and result types
+  (`ContentType`, `RecordType`, `HygieneApplyResult`).
 - `tool_adapter.py`: shared recall deadline and keyword-fallback helpers.
 - `policy_engine.py`: scope/policy resolution (principal tokens, deny-overrides, visibility ranking).
-- `tool_contracts.py`: typed MCP output contracts (published `outputSchema`).
 - `simple_api.py`: `remember` / `ask` aliases over store/recall.
 - `release_gates.py`: release gate evaluation logic.
 - `plugins.py`: hook-based extension points.
@@ -135,6 +181,14 @@ Key points:
   - `policy_principals` define reusable principal identities.
   - `policy_acl_entries` bind principals to policy scopes with `write_mode` and/or `read_visibility`.
 - FTS tables support keyword recall fallback and hybrid scoring.
+- Scope discovery (`memory_scope_list` → `db.list_scope_usage`) has no scope
+  table to read: it groups the flattened scope columns of `episodes`,
+  `knowledge_records` and `knowledge_topics` on the 11 canonical exact-match
+  keys, so a discovered scope is exactly as narrow as every other tool's scope
+  filter. Counts cover live rows only (`deleted = 0` on `episodes` and
+  `knowledge_records`); `knowledge_topics` has no `deleted` column, so topic
+  rows are counted as stored. Display-only metadata is aggregated with
+  `MAX()`, and the read path never runs DDL.
 
 ## Retrieval Semantics
 
@@ -242,6 +296,10 @@ And inspect:
 
 - `src/consolidation_memory/database.py` (facade)
 - `src/consolidation_memory/db/`
+- `src/consolidation_memory/db/scope.py` (scope resolution + discovery)
 - `src/consolidation_memory/client.py`
 - `src/consolidation_memory/query_service.py`
 - `src/consolidation_memory/context_assembler.py`
+- `src/consolidation_memory/tool_dispatch.py` (allowed-argument contract)
+- `src/consolidation_memory/tool_contracts.py` (published output contracts)
+- `src/consolidation_memory/mcp_compat.py` (private SDK seam)

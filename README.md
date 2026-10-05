@@ -340,7 +340,12 @@ consolidation-memory serve --rest     # HTTP API on the [rest] extra
 consolidation-memory ui               # same server + browser UI at /ui/
 ```
 
-Bearer token required beyond loopback (`REST_AUTH_TOKEN`) — see
+Same 29 tools over HTTP, with the same contract: every request body rejects
+unknown keys with **422** (the schemas promise `additionalProperties: false`),
+and `GET /memory/scopes` is the scope-discovery route
+(`memory_scope_list`, pageable via `limit`/`offset`).
+
+Bearer token required beyond loopback (`CONSOLIDATION_MEMORY_REST_AUTH_TOKEN`) — see
 [Security policy](SECURITY.md).
 
 ### Graphical interfaces

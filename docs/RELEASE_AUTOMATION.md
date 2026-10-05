@@ -78,10 +78,11 @@ python scripts/update_changelog.py --limit 400
 python scripts/release.py --bump minor --limit 400
 ```
 
-200 is a runaway guard, not a routine filter: the largest release range in this
-repository's history is 27 commits, and 200 bullets is only a few kilobytes of
-Markdown. The previous default of 20 sat below real range sizes and silently
-dropped the oldest entries of any busy release.
+200 is a runaway guard, not a routine filter: the largest tag-to-tag range in
+this repository's history is 24 commits (`v0.19.0`..`v0.20.0`), and 200
+bullets is only a few kilobytes of Markdown. The previous default of 20 sat
+below real range sizes and silently dropped the oldest entries of any busy
+release.
 
 ### What is dropped first
 
@@ -97,9 +98,9 @@ order is newest-first, as before, but the selection is not:
 - **Dropped last** — user-visible entries, oldest first, and only when they
   outnumber the limit on their own.
 
-So a `docs:`/`chore:` wave can never displace a user-visible change. The
-semver bump policy is unaffected: a breaking change still ships as a minor in
-0.x.
+So a `docs:`/`chore:` wave can never displace a user-visible change. Entry
+selection is independent of the semver bump: see [Criteria](#criteria) for what
+a breaking subject does to the version.
 
 ### How entries are grouped
 
@@ -117,14 +118,17 @@ report to **stderr** and add a `::warning::` annotation when running under GitHu
 Actions. Nothing is written into `CHANGELOG.md`.
 
 ```text
-[changelog] WARNING: Changelog truncated: kept 8 of 26 releasable commits (limit 8).
-[changelog] WARNING: Dropped 18 entries: 18 internal (docs/chore/test/ci/refactor/style/build) and 0 user-visible (feat/fix/perf/security/breaking).
+[changelog] WARNING: Changelog truncated: kept 8 of 23 releasable commits (limit 8).
+[changelog] WARNING: Dropped 15 entries: 15 internal (docs/chore/test/ci/refactor/style/build) and 0 user-visible (feat/fix/perf/security/breaking).
 [changelog] WARNING: No user-visible change was lost; only maintainer-facing entries were dropped.
-[changelog] WARNING: Re-run with a higher limit (for example --limit 26) to keep every entry.
+[changelog] WARNING: Re-run with a higher limit (for example --limit 200) to keep every entry.
 [changelog] WARNING: Dropped entries:
-[changelog] WARNING:   - docs: rebuild the README around the knowledge-layer story
+[changelog] WARNING:   - docs: rebuild the README around the knowledge-layer story 14
 ...
 ```
+
+The suggested limit is `max(2 × the current limit, the range size, 200)`, so a
+small `--limit` never suggests going *below* the default.
 
 When user-visible changes *are* dropped, the report says so explicitly
 (`User-visible changes were dropped (oldest first). Raise the limit before
@@ -141,7 +145,7 @@ undocumented.
 The criteria engine is deterministic:
 
 1. Head commit contains `[skip release]` -> no release.
-2. Head commit contains `[release major|minor|patch]` -> forced bump.
+2. Head commit contains `[release major|minor|patch]` (or `[bump ...]`) -> forced bump.
 3. Otherwise, scan commits since latest tag:
 - Breaking change (`!` in conventional subject or `BREAKING CHANGE` in body) -> `major`.
 - `feat:` -> `minor`.
@@ -190,7 +194,7 @@ Expected for an actual release:
 Symptoms:
 
 - `Update Changelog On Main` fails in the **Commit changelog update** step.
-- Log shows `Working tree is not clean. Commit or stash changes before --commit.`
+- Log shows `Working tree has uncommitted changes outside CHANGELOG.md. Commit or stash them before --commit.`
 
 Cause:
 
@@ -242,6 +246,16 @@ This bypasses auto detection for that run only.
 - The automation no-ops when no releasable commits exist.
 - The release commit/tag itself does not re-trigger a second release, because there are no commits past the new tag.
 - Stable release publishing remains gated by `publish.yml` quality + novelty checks.
+- The MCP wire contract is gated separately, by `scripts/smoke_mcp_stdio.py` in
+  the `Tests` workflow (3.13/ubuntu): it asserts the negotiated protocol
+  version, that every tool publishes both `outputSchema` arms, the tool
+  name/count set, and that an unknown argument is rejected with `isError: true`.
+  `publish.yml` does **not** re-run it, so a release can only ship what already
+  passed `Tests` on the commit it tags.
+- `ruff` is pinned to `>=0.7.0,<0.17` with an explicit rule set in
+  `pyproject.toml`; both workflows lint `src/` and `tests/`. `scripts/` is
+  linted locally and by `scripts/pre_push_check.py`, so the release tooling
+  ships clean without being a CI gate.
 
 ## Manual Override
 
@@ -254,7 +268,7 @@ This bypasses auto detection for that run only.
 ## Operational Notes
 
 - Commit directive `[skip release]` on the head commit suppresses release.
-- Commit directive `[release major|minor|patch]` on the head commit forces a bump.
+- Commit directive `[release major|minor|patch]` (or `[bump ...]`) on the head commit forces a bump.
 - Release commit/tag pushes trigger downstream workflows:
   - `Tests` on `main`
   - `Publish to PyPI` on tag `v*`

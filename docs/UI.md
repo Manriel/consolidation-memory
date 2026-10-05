@@ -41,11 +41,17 @@ time.
 | Tab | What it does |
 | --- | --- |
 | **Ask** | Plain-language question → `memory_ask` recall over episodes, topics, records and claims |
-| **Remember** | Capture a note/fix/preference → `memory_remember` (kind, tags) |
+| **Remember** | Capture a note/fix/fact/preference → `memory_remember` (kind, tags; an empty tag list becomes `ui`) |
 | **Browse** | Recent episodes and knowledge topics; delete an episode (→ `memory_forget`) |
 | **Health** | Status snapshot (last consolidation, FAISS/DB sizes, health note) with fix-it buttons: consolidate, warmup, reindex, install maintenance daemon |
 | **Hygiene** | Corpus hygiene scan and cleanup (`memory_hygiene_scan` / `memory_hygiene_apply`) with dry-run awareness |
 | **Metrics** | Charts from `real_world_eval` — the bundled published bundle plus a live report when present (see [REAL_WORLD_METRICS.md](REAL_WORLD_METRICS.md)) |
+
+`POST /ui/api/ask` forwards the simple-surface arguments exactly as
+`memory_ask` publishes them. `simple_api.build_ask_recall_arguments` is the
+**only** translator to `memory_recall` arguments, and it always sets
+`include_knowledge=True` — the page does not pre-translate, so a UI result and
+an MCP `memory_ask` result are the same call.
 
 ### Setup wizard
 
@@ -66,8 +72,8 @@ The UI inherits the REST trust rules (see
 [SECURITY.md](../SECURITY.md#rest-api)):
 
 - bound to loopback by default — no token needed;
-- any non-loopback bind is refused unless `REST_AUTH_TOKEN` is set
-  (`ui` validates the bind before starting);
+- any non-loopback bind is refused unless `CONSOLIDATION_MEMORY_REST_AUTH_TOKEN`
+  is set (`ui` validates the bind before starting);
 - the browser UI and the REST API share one process and one token.
 
 ## TUI dashboard

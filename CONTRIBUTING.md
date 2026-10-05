@@ -39,9 +39,15 @@ Some tools are **scope-aware** by default; others are **global by design**.
 - `memory_detect_drift` — git diff against a base ref (namespace/project scope only narrows challenged-claim attribution)
 - `memory_policy_list` / `memory_policy_grant` — persisted ACL administration across the DB (CLI: `consolidation-memory policy list|grant`)
 - `memory_hygiene_scan` / `memory_hygiene_apply` — corpus-wide noisy-episode scan and orphan-claim repair (CLI: `consolidation-memory hygiene scan|apply`; UI Hygiene tab)
+- `memory_scope_list` — deployment-topology audit. It is **intentionally not filtered by `read_visibility`**: ACL separates principals inside one deployment, it does not separate tenants, and a scope inventory is only useful when it is complete. See the trust boundary in [docs/ACL.md](docs/ACL.md#trust-boundary).
 - Audit reads with `global_scope=true` — corpus-wide ops dashboard view; `memory_status` caches per scope key (including global)
 
 `memory_forget` is scope-aware but **also expires claims** that lose all provenance when episodes are forgotten. Use hygiene apply with `expire_orphans=true` for claims detached by batch cleanup.
+
+Two contract rules for the tools above:
+
+- `memory_hygiene_apply` returns one key set in both modes: `status` is `dry_run` or `applied` (never `ok`), and `episode_ids` / `forgotten` / `not_found` are always present (zeroed on a dry run). `types.HygieneApplyResult` is the producer type and `tool_contracts.HygieneApplyOutput` mirrors it under an import-time guard, so a contract can never reject a payload after the episodes were deleted.
+- `memory_scope_list` groups on the 11 canonical exact-match scope keys — two scopes differing only in `namespace_sharing_mode`, `app_client_provider`, `app_client_external_key`, `agent_name` or `session_kind` are distinct rows, not one merged row — and counts live rows only. `namespace.display_name` is not part of the payload; the envelope is reusable as a `scope` argument.
 
 ### Policy administration
 
@@ -80,9 +86,9 @@ both configs; `cli._recommended_mcp_simple_server_config()` is the canonical JSO
 
 ## Episode `content_type` vs record `type`
 
-Episodes accept ingest types: `exchange`, `fact`, `solution`, `preference`, `procedure`.
+Episodes accept ingest types (`types.ContentType`): `exchange`, `fact`, `solution`, `preference`, `procedure`.
 
-Consolidation may emit knowledge records with additional types (`procedure`, `strategy`). Store `strategy` episodes as structured JSON (`{"type": "strategy", ...}`) with any ingest `content_type` — see [docs/FAST_PATH_EPISODES.md](docs/FAST_PATH_EPISODES.md).
+Consolidation emits records of type `fact`, `solution`, `preference`, `procedure` or `strategy` (`types.RecordType`). Only `strategy` has no ingest type: store it as structured JSON (`{"type": "strategy", ...}`) with any ingest `content_type` — see [docs/FAST_PATH_EPISODES.md](docs/FAST_PATH_EPISODES.md).
 
 ## MCP host configuration (interactive agents)
 
@@ -95,13 +101,27 @@ Prefer the canonical snippet from `consolidation-memory init` / `setup_service.r
 - **`CONSOLIDATION_MEMORY_DEFERRED_KNOWLEDGE_RETRY_SECONDS`**: seconds to poll for a warm record-embedding cache after a deferred-knowledge recall. Default in library is `3`; **recommended MCP env is `0`** so the first `memory_recall` returns episodes immediately with a warning — call again shortly for full knowledge.
 - **Tool budgets**: `CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS` (default 60), plus per-tool `CONSOLIDATION_MEMORY_TIMEOUT_<TOOL>` (e.g. `MEMORY_STATUS`, `MEMORY_CONSOLIDATE`). Recall uses `CONSOLIDATION_MEMORY_RECALL_TIMEOUT_SECONDS`.
 
-Agent gate smoke (stdio initialize → status → recall under budgets):
+Agent gate smoke (stdio initialize → status → recall under budgets). This is a
+**CI gate**, not just a convenience — `test.yml` runs it on 3.13/ubuntu:
 
 ```bash
 python scripts/smoke_mcp_stdio.py
 ```
 
-Full MCP profile is **29 tools**; simple profile is `memory_recall`, `memory_remember`, `memory_ask`.
+Full MCP profile is **29 tools** (28 published output contracts —
+`memory_store` and `memory_remember` share `StoreOutput`); simple profile is
+`memory_recall`, `memory_remember`, `memory_ask`.
+
+## Tool argument contract
+
+Every published tool `inputSchema` declares `additionalProperties: false`, and
+that is enforced on **all** surfaces from one allowed-argument set derived from
+`schemas.openai_tools`: `tool_dispatch.reject_unknown_arguments` on the dispatch
+seam, pydantic `extra="forbid"` on the MCP argument model, and
+`rest.StrictRequestModel` (`extra="forbid"` → HTTP 422) on every top-level REST
+body. Nested `EpisodeInput` / `OutcomeAnchorInput` stay permissive because the
+published schemas type them as plain objects. When you add or rename a tool
+argument, change the published schema — do not fork a second list.
 
 ## Local validation
 
@@ -109,9 +129,21 @@ Full MCP profile is **29 tools**; simple profile is `memory_recall`, `memory_rem
 python scripts/pre_push_check.py
 python scripts/smoke_mcp_stdio.py
 pytest tests/ -q
-ruff check src tests
+ruff check src tests/ scripts/
 mypy src/consolidation_memory/
 bandit -q -ll -r src scripts -s B608,B110
+```
+
+`ruff` is pinned to `>=0.7.0,<0.17` and `[tool.ruff.lint] select` lists the
+enforced rules in full, with no `ignore` and no `per-file-ignores`: a new rule
+becomes active only by an explicit edit, and every suppression is a `# noqa`
+carrying its own reason. BLE001 is deliberately not selected.
+
+`pre_push_check.py` lints `scripts/` too and runs the stdio smoke only with
+`--mcp-smoke`:
+
+```bash
+python scripts/pre_push_check.py --mcp-smoke
 ```
 
 ### Pre-push hook (recommended)
