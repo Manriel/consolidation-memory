@@ -6,46 +6,61 @@
 
 - MCP tool results are no longer wrapped: `structuredContent` is the payload object itself, and the `content` text block is that object's JSON serialization. The `{"result": ...}` wrapper is gone, so hosts must stop reading `["result"]`.
 - Unknown tool arguments are errors, not ignored. MCP answers `isError: true`, REST answers HTTP 422 naming the offending keys, and the OpenAI/dispatch path raises before the tool body runs; callers that passed extra keys and relied on them being dropped must remove them.
+- `memory_hygiene_apply` reports `status: "applied"` instead of `"ok"`, and always returns `episode_ids`, `forgotten` and `not_found`; both modes emit the same key set.
 - The `mcp` dependency floor moves to `mcp[cli]>=2.3.0,<3` and the SDK entry point is now `MCPServer` instead of `FastMCP`. Installations pinned to an older SDK must upgrade.
 - These ship as a minor under the 0.x policy, so the supported security line moves to the new minor (`SECURITY.md`).
-
-### Features
-
-- typed per-tool `outputSchema` in `tools/list`, shaped as `anyOf[success, error]`; the error arm is `{"error": ...}` and every successful payload is validated against the success arm before it leaves the process
-- tool execution failures return `isError: true` with actionable text and a `{"error": ...}` structured payload instead of a JSON-RPC error
-- startup self-check: the server refuses to serve if a registered tool publishes a missing or one-armed `outputSchema`
-- self-healing schema publication: a tool registered after startup gets its `outputSchema` on the next `tools/list` instead of publishing success-only forever
-- `mcp_compat` is the single module that touches private SDK surfaces and raises `MCPCompatError` naming the installed `mcp` version, the supported range and what was probed
-- `memory_scope_list` discovers scopes on MCP, OpenAI and REST (`GET /memory/scopes`), with `limit` (1-1000, default 100) and `offset` for paging; the payload carries `total`, `offset` and a `message` when the window does not cover every scope
-- `HygieneApplyResult` and `ConsolidationLogResult` are exported from the package root
-- `scripts/smoke_mcp_stdio.py` is a CI gate: negotiated protocol version, `outputSchema` and `inputSchema` publication, tool-count cross-check, `memory_status`, `memory_recall`, a byte-identical non-ASCII round trip and unknown-argument rejection
-- stdio wire tests in the unit suite (`tests/test_mcp_stdio_wire.py`) cover the non-ASCII round trip and unknown-argument rejection across the real transport
-- the changelog builder keeps 200 entries per section instead of 20 and ranks user-visible entries before capping, so a `docs`/`chore` wave can no longer displace a `feat`, `fix` or `chore(deps)` change
-- truncated release notes are reported on stderr and as a GitHub annotation naming the drop count, and `--limit` is available on `update_changelog.py` and `release.py`
 
 ### Changed
 
 - unknown-argument rejection is enforced from one shared allowed-argument set derived from the published `inputSchema`; MCP, REST and the OpenAI/dispatch path accept exactly the same keys, and startup fails if the SDK-enforced set diverges from it
-- `memory_hygiene_apply` reports `status: "applied"` instead of `"ok"` and always returns `episode_ids`, `forgotten` and `not_found`; both modes emit the same key set
+- REST request models reject unknown body keys and name the offending keys; nested episode and outcome objects stay permissive
 - `memory_scope_list` groups on all 11 canonical scope keys instead of 6, so scopes differing only by `namespace_sharing_mode`, `app_client_provider`, `app_client_external_key`, `agent_name` or `session_kind` are listed separately instead of merged
 - `memory_scope_list` counts only live rows: `episodes` and `knowledge_records` filter `deleted = 0`, while `knowledge_topics` has no soft-delete column and is counted as stored
-- `memory_scope_list` display metadata is picked deterministically with `MAX(col)` instead of read off an arbitrary group row
-- `memory_scope_list` no longer emits `namespace.display_name`; the contract declares only `slug` and `sharing_mode`, while a scope envelope still accepts `display_name` as input
-- REST request models reject unknown body keys with HTTP 422 and name the offending keys; nested episode and outcome objects stay permissive
+- `memory_scope_list` display metadata is picked deterministically with `MAX(col)` instead of read off an arbitrary group row, and the payload no longer carries `namespace.display_name` (the `scope` argument still accepts it)
+- every tool now publishes one description, from `schemas.openai_tools`, on MCP and on the OpenAI-compatible schemas
 - the drift worker subprocess runs on the server's own interpreter instead of the base interpreter behind a virtualenv symlink, and gets `PYTHONPATH` forwarded
+
+### Features
+
+- feat(scripts): generate the MCP tool reference
+- feat: add scope discovery across MCP, OpenAI and REST
+- feat(mcp): publish typed output contracts for all tools
+- feat(mcp): report tool execution errors as isError results
+- feat(mcp): document tool inputs and reject unknown arguments
 
 ### Bug Fixes
 
-- `memory_hygiene_apply` no longer deletes episodes and then fails output validation: the applied payload omitted the contract-required `episode_ids`
-- the output-contract test suite is reproducible in a virtualenv; a symlinked `bin/python` used to collapse to the base interpreter, so the drift subprocess could not resolve distribution metadata
-- scope discovery no longer merges distinct scopes and no longer counts soft-deleted rows
-- scope discovery metadata no longer depends on row order
-- release notes no longer silently drop the oldest commits of a range
-- `memory_policy_grant` CLI help lists the token types the scope matcher actually emits, instead of `agent`/`user`, which never match
+- fix(mcp): publish one tool description on every surface
+- fix(mcp): state that scope discovery is unfiltered in the published description
+- fix(mcp): enforce the input contract on REST and pin it to the SDK
+- fix(mcp): enforce the published input contract on the dispatch path
+- fix(mcp): isolate private SDK surfaces and make outputSchema publication self-healing
+- fix(db): correct scope discovery identity, liveness and metadata
+- fix(drift): keep the drift worker on the server's own interpreter
+- fix(release): stop changelog truncation from hiding user-visible changes
+- fix(mcp): repair memory_hygiene_apply applied payload and its contract
+- fix(cli): correct the policy grant principal-type help
+- fix(ci): clear ruff and mypy gates for release
+- fix(tests): parse object tool results in surface contracts
+- fix(mcp): return tool results as structured objects
+
+### Dependencies
+
+- chore(deps): migrate to mcp 2.3 and MCPServer API
 
 ### Documentation
 
-- docs/TOOLS.md: generated per-tool input and output schemas (`scripts/generate_tool_reference.py`), with a test that fails when the committed reference drifts
+- docs: record the description single-source and close its debt item
+- docs: correct four stale claims and document the package root
+- docs: reconcile the reader docs with the code as it stands
+- docs: point the agent-facing files at the documentation that exists
+- docs: state the wire contract and the ACL rules in the present tense
+- docs: make the reader docs standing documentation of the current code
+- docs: state the four guides as standing documentation
+- docs: align reader docs with the code at HEAD
+- docs(mcp): make the wire contract match the code at HEAD
+- docs: bring the security, roadmap, release and maintainer guides to the current code
+- docs(changelog): spell out what an upgrade must adapt to
 - docs: sync desktop and web copy with the positioning
 - docs: extend the architecture doc with surfaces, contracts and modules
 - docs: fix post-rebuild inconsistencies in guides and meta
@@ -59,11 +74,14 @@
 
 ### Internal
 
-- ruff runs an explicit lint selection with no project-wide ignores and a `>=0.7.0,<0.17` floor, and `mcp` is type-checked instead of ignored, so contributors can see new lint findings and new mypy errors
+- chore(tooling): make the lint configuration honest, explicit and reproducible
+- test(ci): gate the MCP stdio wire contract in CI
+- chore(changelog): refresh Unreleased section
 - test: guard tracked markdown links and anchors
 - ci: regenerate docs/TOOLS.md with the docs bot
 - chore: drop stray my_script.js
 - ci: run desktop app tests in the optional surfaces job
+- test: keep strategy reuse evidence fresh
 
 ## 0.20.3 - 2026-07-10
 
