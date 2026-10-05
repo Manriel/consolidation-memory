@@ -49,8 +49,8 @@ Batch stores report the denial per episode inside `results`.
 
 Not gated by `write_mode`: policy administration itself, scope discovery,
 maintenance operations (`memory_hygiene_*`, `memory_compact`, `memory_export`,
-`memory_consolidate`, `memory_detect_drift`), and the transport — those are
-covered by the trust boundary below.
+`memory_consolidate`, `memory_detect_drift`). Those are covered by the trust
+boundary below.
 
 ### Reads (`read_visibility`)
 
@@ -86,31 +86,32 @@ For every operation the client builds the resolved scope
 5. The resolution carries its origin (`policy_source`: `scope_policy` or
    `persisted_acl`) and how many bindings matched (`policy_acl_matches`).
 
-If the ACL lookup itself fails, the engine falls back to the inline policy
-and logs a warning — it never fails open to broader rights than the
-resolved scope allows.
+If the ACL lookup itself fails, the engine logs a warning and applies the
+inline `scope.policy` unchanged — the persisted rows are simply not consulted,
+so a lookup failure widens the effective policy to whatever the call asked for.
 
 ### Principal tokens
 
 A binding matches when its principal key equals any token derived from the
 resolved scope:
 
-| Token type | Example value |
-| --- | --- |
-| `any` | `*` (wildcard match-all) |
-| `namespace_slug` | `team-a` |
-| `project_slug` | `repo-a` |
-| `app_client` | `python_sdk:legacy_client` |
-| `app_client_external_key` / `app_client_provider` | configured app identifiers |
-| `agent_external_key` / `agent_name` | agent identity inside the app |
-| `session_external_key` / `session_kind` | session identity |
+| Token type | Example value | When it is emitted |
+| --- | --- | --- |
+| `any` | `*` | always (wildcard match-all) |
+| `namespace_slug` | `team-a` | always |
+| `project_slug` | `repo-a` | always |
+| `app_client` | `python_sdk:legacy_client` | always, as `type:name` |
+| `app_client_external_key` / `app_client_provider` | configured app identifiers | only when set on the envelope |
+| `agent_external_key` / `agent_name` | agent identity inside the app | `agent_external_key` when set, otherwise `agent_name` — never both |
+| `session_external_key` / `session_kind` | session identity | `session_external_key` when set, `session_kind` always, for a scope carrying a session |
 
-Matching is **exact**: the stored `(principal_type, principal_key)` pair
-must equal one of the tokens above. `agent` is not an alias for
-`agent_name`, and an `app_client` key must be written as `type:name`
-(e.g. `python_sdk:legacy_client`, `mcp:desktop`). A mismatched grant is
-accepted on write but will never match a call — verify with
-`policy list` plus a probe call.
+Matching is **exact**: the stored `(principal_type, principal_key)` pair must
+equal one of the tokens above, and `any` is the only wildcard. Those ten types
+are the complete vocabulary — `grant` validates the mode and visibility values
+but not the type, so an unrecognized type is stored and never matches. `agent`
+is not an alias for `agent_name`, and an `app_client` key must be written as
+`type:name` (e.g. `python_sdk:legacy_client`, `mcp:desktop`). Verify a grant
+that does not behave with `policy list` plus a probe call.
 
 ## Configuring
 
@@ -133,7 +134,7 @@ consolidation-memory policy grant --principal-type app_client \
 | Flag | Meaning |
 | --- | --- |
 | `--namespace` / `--project` | Scope selectors; **omitted = wildcard** (binding applies to any namespace/project) |
-| `--principal-type` | Required. Principal kind, e.g. `app_client`, `agent`, `user` |
+| `--principal-type` | Required. One of the ten token types in [Principal tokens](#principal-tokens), e.g. `any`, `app_client`, `agent_name` |
 | `--principal-key` | Required. Concrete key, e.g. `python_sdk:legacy_client` |
 | `--write-mode` | `allow` or `deny` |
 | `--read-visibility` | `private`, `project`, or `namespace` |
@@ -158,8 +159,9 @@ POST /memory/policy/grant
 }
 ```
 
-Omitted `namespace`/`project` act as wildcards (see
-`SCOPE_ENVELOPE_SCHEMA` in `schemas.py`).
+Omitted `namespace`/`project` act as wildcards. The body is
+`rest.PolicyGrantRequest`: a strict model, so an undeclared key is HTTP 422
+rather than a silently ignored field.
 
 ### Via an agent — MCP
 
@@ -199,8 +201,8 @@ for tests:
 }
 ```
 
-Remember the precedence: if persisted ACL rows match the same call's
-principals, **the persisted rows override this inline policy**.
+Precedence, restated: a matching persisted row **overrides** this inline
+policy.
 
 ## Worked examples
 
@@ -214,7 +216,7 @@ consolidation-memory policy grant --namespace team-a --project repo-a \
 `any` / `*` is the match-everyone token pair; the namespace/project
 selectors keep the rule inside `team-a/repo-a`.
 
-**2. Open up reads across a namespace for one app (agent):**
+**2. Open up reads across a namespace for one app:**
 
 ```json
 {"name": "memory_policy_grant", "arguments": {
@@ -228,9 +230,9 @@ rows from sibling projects; writes still require an exact-scope match and
 an `allow` binding.
 
 **3. Two bindings disagree (conflict):** grant `write_mode: allow` for
-`app_client:*` and `write_mode: deny` for `user:ci-bot`; a call whose
-principals match both resolves to **deny** (deny overrides allow) and the
-resolution conflict is logged.
+`app_client` / `mcp:desktop` and `write_mode: deny` for `agent_name` /
+`ci-bot`; a call whose principals match both resolves to **deny** (deny
+overrides allow) and the resolution conflict is logged.
 
 ## Reference architecture: parallel microservice development
 
@@ -318,9 +320,7 @@ Verification loop (run from the counterpart's envelope):
 
 What belongs in the shared scope is a deliberate team decision (contract
 facts, rollout rules, published integration docs — not work-in-progress
-notes). In practice that boundary is an instruction in each agent's
-system prompt plus distinct principals per service, so an audit of
-`policy list` and `memory_scope_list` matches the intended topology. Neither
+notes), carried in practice by distinct principals per service. Neither
 listing is gated by `read_visibility` or `write_mode`; see
 [Trust boundary](#tools-intentionally-outside-the-read-filter).
 
@@ -329,17 +329,20 @@ listing is gated by `read_visibility` or `write_mode`; see
 - `consolidation-memory policy list` / `GET /memory/policy` /
   `memory_policy_list` — the persisted bindings (what you granted).
 - Server log lines — resolved-policy conflicts and ACL lookup fallbacks.
-- A probe write — the only fully authoritative answer for a given scope:
-  `status: "write_denied"` vs a successful write.
+- A probe write — the only direct answer about `write_mode` in a given scope:
+  `status: "write_denied"` versus a successful write. `read_visibility` has no
+  probe, because a read that is too narrow returns less rather than failing.
 
 ## Trust boundary
 
 ACL is **data-level sharing control between principals inside one
 deployment** — it is not authentication, and it does not separate tenants.
 On MCP stdio any process that can launch the server has full database access
-(see [SECURITY.md](../SECURITY.md#trust-boundaries)); REST requires a bearer
-token beyond loopback. Use ACL to separate projects, agents and apps — use the
-transport and OS permissions to separate tenants.
+(see [SECURITY.md](../SECURITY.md#trust-boundaries)); a REST bind outside
+loopback requires a bearer token, or an explicit
+`CONSOLIDATION_MEMORY_REST_ALLOW_PUBLIC_BIND` opt-in. Use ACL to separate
+projects, agents and apps — use the transport and OS permissions to separate
+tenants.
 
 ### Tools intentionally outside the read filter
 
@@ -351,12 +354,11 @@ filtered by `read_visibility`:
 | `memory_policy_list` / `policy list` / `GET /memory/policy` | Every persisted ACL binding | The question an operator asks is "what did we grant", not "what may this principal see"; filtering the grant table makes a misconfigured binding invisible to the audit that would find it |
 | `memory_scope_list` / `GET /memory/scopes` | Every scope that has stored rows, with per-table counts | The question is "does the data layout match the intended topology"; hiding the scopes a principal cannot read would defeat the audit |
 
-The consequence is deliberate and worth stating plainly: on a shared
-deployment, a caller that can invoke these tools learns the shape of the
-whole corpus (which namespaces, projects, app clients and agents exist, and
-roughly how much each holds) even when its own `read_visibility` is `private`.
-It does **not** learn the contents — no read filter is bypassed, and no row is
-read through this path.
+Stated plainly: on a shared deployment, a caller that can invoke these tools
+learns the shape of the whole corpus (which namespaces, projects, app clients
+and agents exist, and roughly how much each holds) even when its own
+`read_visibility` is `private`. It does **not** learn the contents — no read
+filter is bypassed, and no row is read through this path.
 
 This is acceptable exactly when the transport is: the stdio subprocess is
 inherited by whoever launched it, so the caller already has full database
@@ -375,7 +377,7 @@ MCP, REST and OpenAI surfaces:
 - persisted `read_visibility` enforced across surfaces;
 - `memory_forget` / `memory_protect` / `memory_correct` deny paths.
 
-The input contract is strict on every surface, not only MCP: unknown top-level
+The input contract is strict on every surface: unknown top-level
 arguments are rejected from one shared allowed-argument set derived from the
 published `inputSchema` — HTTP 422 on REST, `ToolContractError` on the
 dispatch seam — so a body that MCP refuses cannot be replayed through another
@@ -387,6 +389,5 @@ the published schema types them as plain objects. Wire details:
 
 - [MCP guide — scopes and policies](MCP_GUIDE.md#scopes-and-sharing)
 - [MCP guide — discovering existing scopes](MCP_GUIDE.md#discovering-existing-scopes)
-- [MCP guide — surfaces parity](MCP_GUIDE.md#surfaces-parity)
 - [Architecture](ARCHITECTURE.md) — `db/scope.py`, `policy_engine.py`
 - [Security policy](../SECURITY.md)

@@ -2,9 +2,8 @@
 
 The consolidation-memory MCP server exposes the memory engine to any MCP host:
 agents get typed tools, discoverable schemas, structured results and a scope
-system for safe sharing. This guide covers everything the README's quick-start
-does not: the wire contract, scopes and policies, the error model, every
-environment variable, and end-to-end recipes.
+system for safe sharing. This guide covers the wire contract, scopes and
+policies, the error model, every environment variable, and end-to-end recipes.
 
 - **Full tool reference** (all 29 tools, generated from the published schemas):
   [TOOLS.md](TOOLS.md)
@@ -73,12 +72,14 @@ not ask for. The revision ladder comes from the installed library
 The era is fixed by the client's **first** request
 (`runner.serve_dual_era_loop`): an `initialize` handshake opens the handshake
 era, any other request carrying the per-request `_meta` envelope opens the
-modern era. A session cannot mix the two.
+modern era. A session cannot mix the two — an `initialize` on a modern
+connection is `UNSUPPORTED_PROTOCOL_VERSION`, an enveloped request on a
+handshake connection is `INVALID_REQUEST`.
 
 | Revision | How it is reached |
 | --- | --- |
-| `2026-07-28` | Modern era only (`MODERN_PROTOCOL_VERSIONS`): no `initialize`; the version travels per request in `params._meta` under `io.modelcontextprotocol/protocolVersion`. Any other value in the envelope is refused with `UNSUPPORTED_PROTOCOL_VERSION`, naming the served list |
-| `2025-11-25` | Handshake ceiling (`LATEST_HANDSHAKE_VERSION`) — the newest revision an `initialize` can settle on, and the counter-offer for an unknown request |
+| `2026-07-28` | Modern era only (`MODERN_PROTOCOL_VERSIONS`): no `initialize`; every request carries the envelope pair in `params._meta` — `io.modelcontextprotocol/protocolVersion` plus `io.modelcontextprotocol/clientCapabilities`. A missing companion key is `INVALID_PARAMS` naming it; any other version value is `UNSUPPORTED_PROTOCOL_VERSION` naming the served list. Results in this era also carry `resultType: "complete"` and a `serverInfo` `_meta` stamp |
+| `2025-11-25` | Handshake ceiling (`LATEST_HANDSHAKE_VERSION`) — the newest revision an `initialize` can settle on, and the counter-offer for a requested version outside the ladder |
 | `2025-06-18`, `2025-03-26` | Handshake era, served as offered |
 | `2024-11-05` | Handshake floor (`OLDEST_SUPPORTED_VERSION`) — what `initialize` settles on for older hosts |
 
@@ -110,14 +111,17 @@ A tool that **executes** returns three synchronized pieces:
    `structuredContent` against it; the server validates every successful
    result against the success arm before it leaves the process.
 
-The text block is the SDK's own `indent=2` JSON serialization of the payload,
-so a nested string inside it is JSON-escaped like any other: `json.loads` it
-before comparing bytes. `structuredContent` is the byte-faithful channel — it
-leaves the process as raw UTF-8, so a store→read round trip returns the stored
-bytes unchanged, literal `\uXXXX` text in the stored content included.
+The text block is the SDK's own serialization of the payload
+(`pydantic_core.to_json(..., indent=2)`), so it is a JSON *string containing*
+JSON — the enclosing frame escapes the quotes and newlines around it.
+Non-ASCII is written raw in both channels (`Γειά`, never
+`\u0393\u03b5\u03b9\u03ac`), so a store→read round trip returns the stored bytes
+through either one, literal `\uXXXX` text in the stored content included. The
+gap between the channels is one layer of encoding, not fidelity: `json.loads`
+twice for the text block, once for `structuredContent`.
 
-Unknown input arguments are **rejected** on every surface, not silently
-dropped. See [Surfaces parity](#surfaces-parity).
+Unknown input arguments are **rejected** on every surface rather than dropped.
+See [Surfaces parity](#surfaces-parity).
 
 ### Example — success
 
@@ -128,7 +132,7 @@ dropped. See [Surfaces parity](#surfaces-parity).
   "content": [
     {
       "type": "text",
-      "text": "{\n  \"episodes\": [\n    {\n      \"id\": \"259b0c75-...\",\n      \"content\": \"The deploy pipeline fails...\",\n      \"content_type\": \"exchange\",\n      \"tags\": [],\n      \"created_at\": \"2026-10-03T17:29:26+00:00\",\n      \"surprise_score\": 0.5,\n      \"access_count\": 0\n    }\n  ],\n  \"total_matches\": 1,\n  \"query\": \"deploy\",\n  \"message\": null\n}"
+      "text": "{\n  \"episodes\": [\n    {\n      \"id\": \"259b0c75-...\",\n      \"content\": \"The deploy pipeline fails...\",\n      \"content_type\": \"exchange\",\n      \"tags\": [],\n      \"created_at\": \"2026-10-03T17:29:26.481902+00:00\",\n      \"surprise_score\": 0.5,\n      \"access_count\": 0\n    }\n  ],\n  \"total_matches\": 1,\n  \"query\": \"deploy\",\n  \"message\": null\n}"
     }
   ],
   "structuredContent": {
@@ -138,7 +142,7 @@ dropped. See [Surfaces parity](#surfaces-parity).
         "content": "The deploy pipeline fails...",
         "content_type": "exchange",
         "tags": [],
-        "created_at": "2026-10-03T17:29:26+00:00",
+        "created_at": "2026-10-03T17:29:26.481902+00:00",
         "surprise_score": 0.5,
         "access_count": 0
       }
@@ -151,8 +155,8 @@ dropped. See [Surfaces parity](#surfaces-parity).
 }
 ```
 
-(The text block is the compact/indented serialization of exactly the
-`structuredContent` object; line breaks above are shortened for readability.)
+(The text block is the same object at `indent=2`; the frame's escapes around it
+are folded onto one line above for readability.)
 
 ### Example — tool execution failure (timeout)
 
@@ -177,14 +181,17 @@ model (tool execution errors are feedback, not protocol failures).
 
 ### Example — rejected input
 
-`memory_status` called with an unknown argument:
+`memory_status` called with an unknown argument. The SDK's pydantic model
+validates before the body runs, so there is no `structuredContent` — the text
+is the whole result, and it ends with a pydantic help URL that carries the
+library version:
 
 ```json
 {
   "content": [
     {
       "type": "text",
-      "text": "Error executing tool memory_status: 1 validation error for memory_statusArguments\njunk\n  Extra inputs are not permitted [type=extra_forbidden, input_value=1, input_type=int]"
+      "text": "Error executing tool memory_status: 1 validation error for memory_statusArguments\njunk\n  Extra inputs are not permitted [type=extra_forbidden, input_value=1, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden"
     }
   ],
   "isError": true
@@ -198,16 +205,17 @@ model (tool execution errors are feedback, not protocol failures).
 | Nothing lost | Undeclared payload keys pass through (`additionalProperties: true` on outputs); text and structured channels carry the same data |
 | Typed outputs | Every success payload validates against the published `outputSchema` success arm (strict types, required fields per the dispatcher's shapes) |
 | Honest failures | Timeouts, validation errors and dispatch failures are `isError: true`, never a soft `{"error": ...}` success |
-| Stable bytes | `structuredContent` leaves the process as raw UTF-8, so stored text survives a write→read round trip byte-for-byte; the text block is a JSON serialization of the same payload, so decode it before comparing bytes |
+| Stable bytes | Both channels leave the process as raw UTF-8 with no `\uXXXX` escaping of their own, so stored text survives a write→read round trip byte-for-byte, literal escape sequences in the content included; the text block costs one extra `json.loads` |
 | Two arms, always | Every tool in `tools/list` publishes an `anyOf[success, error]` `outputSchema`; a tool registered after startup is healed into the contract on its next `tools/list` rather than publishing success-only |
 | Fail loudly at startup | If a tool would publish a success-only schema, the self-check refuses to serve instead of shipping a contract that rejects every `{"error": ...}` payload |
 
-The startup self-check is why the two rows above hold rather than degrade: a
-private `mcp` rename that used to strip `outputSchema` from every tool, or
-leave a success-only one, now fails the boot with a message naming the
-installed SDK version and the supported range
-([mcp_compat.py](../src/consolidation_memory/mcp_compat.py)) instead of
-reaching clients as a lying contract.
+The startup self-check is pure verification: it repairs what it can, then
+raises, naming every tool whose published `outputSchema` is not an
+`anyOf[success, error]` pair together with the installed SDK version and the
+supported range ([mcp_compat.py](../src/consolidation_memory/mcp_compat.py)).
+The five private `mcp` surfaces the contract rests on are probed at import, so
+a rename among them is an explicit boot failure that names the version and the
+range, not a wire contract that has stopped describing the results.
 
 ## Scopes and sharing
 
@@ -222,14 +230,16 @@ legacy defaults apply: namespace `default`, app client
 | Section | Keys | Meaning |
 | --- | --- | --- |
 | `namespace` | `slug`, `sharing_mode`, `display_name` | Top-level sharing boundary (`private` / `shared` / `team` / `managed`) |
-| `app_client` | `name`, `app_type`, `provider`, `external_key` | Calling application (`mcp`, `python_sdk`, `rest`, `openai_agents`, `langgraph`, `cli`, ...) |
+| `app_client` | `name`, `app_type`, `provider`, `external_key` | Calling application (`mcp`, `python_sdk`, `rest`, `openai_agents`, `langgraph`, `adk`, `letta`, `cli`, `other`) |
 | `agent` | `name`, `external_key` | Logical agent inside the app (`null` when unused) |
 | `session` | `external_key`, `session_kind` | Short-lived interaction context (`conversation`, `thread`, `workflow`, `job`) |
 | `project` | `slug`, `display_name`, `root_uri`, `repo_remote`, `default_branch` | Repository/project identity |
+| `policy` | `write_mode`, `read_visibility` | Inline ACL for this call only — the **base** policy, overridden by a matching persisted binding ([ACL.md](ACL.md#how-the-effective-policy-is-resolved)) |
 
-This is the **input** envelope; every key above is accepted on the way in. The
-`memory_scope_list` output is narrower — see
-[Discovering existing scopes](#discovering-existing-scopes).
+This is the **input** envelope: every section additionally accepts an `id`, the
+stored row id (`project.id` doubles as a slug fallback). The
+`memory_scope_list` output is narrower — it stamps only the keys that decide
+read and write matching, so see [Discovering existing scopes](#discovering-existing-scopes).
 
 `scope` accepts three shapes:
 
@@ -271,7 +281,7 @@ exists:
           "project": { "slug": "billing", "display_name": null, "root_uri": null, "repo_remote": null, "default_branch": null }
         },
         "counts": { "episodes": 12, "records": 3, "topics": 1 },
-        "last_used_at": "2026-10-03T17:29:26+00:00"
+        "last_used_at": "2026-10-03T17:29:26.481902+00:00"
       }
     ],
     "total": 1,
@@ -307,21 +317,20 @@ reusable in both directions.
 
 #### Discovery tools are not read-visibility-filtered
 
-`memory_scope_list` and `memory_policy_list` are **not** filtered by
-`read_visibility` — they are deployment-topology audit tools, and the ACL
-layer separates principals inside one deployment rather than tenants. On stdio
-the subprocess already holds full database access, so filtering a discovery
-listing would hide the scopes an operator is trying to audit without removing
-any real capability. Do not expose the MCP subprocess to untrusted
-multi-tenant environments without OS-level isolation. Full reasoning:
+`memory_scope_list` and `memory_policy_list` are deployment-topology audit
+tools and are **not** filtered by `read_visibility`. A caller that reaches them
+learns the shape of the corpus — which namespaces, projects, app clients and
+agents exist, and roughly how much each holds — but no read filter is bypassed
+and no content is exposed. The reasoning and the deployment conditions that
+make this acceptable:
 **[ACL.md — Trust boundary](ACL.md#trust-boundary)**.
 
 ### Policies and ACL
 
 Scopes decide *visibility*; policies decide *permission*:
 
-- `memory_policy_list` — persisted access policies and ACL bindings, and
-  (like scope discovery) not filtered by `read_visibility`.
+- `memory_policy_list` — persisted access policies and ACL bindings; an audit
+  tool, like scope discovery above.
 - `memory_policy_grant` — create/update a binding for a principal with
   `write_mode` (`allow`/`deny`) and `read_visibility`
   (`private`/`namespace`/`project`).
@@ -337,12 +346,15 @@ configuration, worked examples: **[ACL.md](ACL.md)**.
 
 | Kind | Transport shape | Example |
 | --- | --- | --- |
-| Protocol error | JSON-RPC `error` (no result) | Unknown tool, malformed request |
-| Tool execution error | Result with `isError: true` + actionable text + `structuredContent.error` (an argument rejected before the body runs carries the text only) | Timeout, bad input, dispatch failure |
+| Protocol error | JSON-RPC `error` (no result) | Unknown method (`-32601`), an `initialize` on a modern-envelope connection, an enveloped request on a handshake connection |
+| Tool execution error | Result with `isError: true` + actionable text + `structuredContent.error`; an unknown tool name and an argument rejected before the body runs carry the text only | Timeout, bad input, dispatch failure |
 | Business outcome | Result with `isError: false` and a status field | `status: "not_found"`, `status: "write_denied"`, `status: "dry_run"` |
 
-Only the middle row is `isError: true`; success-shaped payloads with a
-non-happy `status` are **not** failures — callers branch on the status.
+An unknown **tool** is an execution error, not a protocol error — the frame is
+well-formed JSON-RPC and the answer is `isError: true` with the text
+`Unknown tool: <name>`. Only the middle row is `isError: true`; success-shaped
+payloads with a non-happy `status` are **not** failures — callers branch on
+the status.
 
 ### `memory_hygiene_apply` status
 
@@ -360,7 +372,7 @@ Per tool: `CONSOLIDATION_MEMORY_TIMEOUT_<TOOL>` → per-tool default →
 
 | Tool | Default | Tool | Default |
 | --- | --- | --- | --- |
-| `memory_store`, `memory_remember`, `memory_search` | 30s | `memory_claim_browse`, `memory_outcome_*`, `memory_status` | 30s |
+| `memory_store`, `memory_remember`, `memory_search` | 30s | `memory_claim_browse`, `memory_outcome_record`, `memory_outcome_browse`, `memory_status` | 30s |
 | `memory_forget`, `memory_protect`, `memory_read_topic` | 30s | `memory_contradictions`, `memory_consolidation_log` | 30s |
 | `memory_claim_search`, `memory_decay_report`, `memory_timeline`, `memory_browse` | 45s | `memory_ask`, `memory_store_batch`, `memory_correct` | 60s |
 | `memory_hygiene_scan` | 60s | `memory_hygiene_apply`, `memory_export` | 180s |
@@ -382,7 +394,8 @@ Dedicated budgets (own environment variables):
 Every default above is the code default, not a recommendation: `server.py`
 reads the variable at import and falls back to the listed value. A budget of
 `0` or a negative number is not "unbounded" — the resolver substitutes its own
-ceiling instead (180s drift, 90s client init, 90s recall, 20s recall fallback).
+ceiling instead (180s drift, 90s client init, 90s recall, 20s recall fallback,
+60s for a tool with no dedicated default).
 
 ### Fallback chains
 
@@ -450,7 +463,7 @@ variable without that prefix.
 | `WARMUP_PRIME_TOPIC_CACHE` / `WARMUP_PRIME_RECORD_CACHE` | `true` | Prime recall caches at warmup |
 | `WARMUP_PRIME_CLAIM_CACHE` | `false` | Prime the claim cache (heavier) |
 | `PRELOAD_SCIPY_ON_START` / `PRELOAD_NUMERIC_BACKENDS_ON_START` | on / on | Import heavy numeric deps up front (avoids first-call stalls) |
-| `STATUS_LIGHTWEIGHT` | on | Default of `memory_status(lightweight=true)`: skip markdown scans |
+| `STATUS_LIGHTWEIGHT` | on | Fallback for `memory_status(lightweight=...)` when the argument is omitted: skip markdown scans |
 | `IDLE_TIMEOUT_SECONDS` | 900 | Exit stdio server after N idle seconds (`0` = never) |
 | `IDLE_CHECK_INTERVAL_SECONDS` | 15 | Idle sweep cadence |
 | `STDIO_SINGLETON` / `STDIO_SINGLETON_TAKEOVER_TIMEOUT_SECONDS` | on / 10 | One server process per project; takeover wait |
@@ -477,6 +490,9 @@ variable without that prefix.
 | `REST_ALLOW_PUBLIC_BIND` | Explicit opt-in for non-loopback bind |
 
 ## Recipes
+
+Every block below is the request object of a `tools/call`; add your own
+`jsonrpc` and `id` when sending it on the wire.
 
 ### Remember something, then ask about it
 
@@ -543,10 +559,9 @@ parts are transport encoding and the MCP-only bits documented here
 ### One input contract, four enforcement points
 
 Every published `inputSchema` declares `additionalProperties: false`, and
-`additionalProperties: false` is **enforced**, not just advertised. The
-allowed set is derived once from the published schemas
-(`tool_dispatch.accepted_argument_names`), and the same set is checked where
-the request enters:
+every surface enforces it. The allowed set is derived once from the published
+schemas (`tool_dispatch.accepted_argument_names`), and the same set is checked
+where the request enters:
 
 | Surface | How the rejection surfaces |
 | --- | --- |
