@@ -11,6 +11,8 @@ A release is allowed only when all required gates pass with complete and recent 
 - Publish workflow: `.github/workflows/publish.yml`
 - Automated release trigger: `.github/workflows/release-on-main.yml`
 - Criteria evaluator: `scripts/release_criteria.py`
+- Automation reference: [RELEASE_AUTOMATION.md](RELEASE_AUTOMATION.md)
+- Docs freshness guard: `scripts/check_release_docs.py` (`.github/workflows/release-docs-guard.yml`)
 
 ## Required Evidence
 
@@ -32,14 +34,15 @@ The evaluator enforces these gates:
 - Required top-level and per-section fields must exist in the novelty artifact.
 
 4. `evidence_recency_gate`
-- Evidence age must be less than or equal to `max_age_days` (default 7).
+- Evidence age must be less than or equal to `max_age_days` (default 7; override with `--max-age-days`).
 
 If any gate fails, overall release gate status is false.
 
 ## Local Verification
 
+Reproduce the gate evaluator against fresh evidence:
+
 ```bash
-python scripts/release.py --bump patch --dry-run
 python -m benchmarks.novelty_eval --mode full --output benchmarks/results/novelty_eval_release_full.json
 python scripts/verify_release_gates.py \
   --novelty-result benchmarks/results/novelty_eval_release_full.json \
@@ -47,23 +50,57 @@ python scripts/verify_release_gates.py \
   --output benchmarks/results/release_gate_report.json
 ```
 
-`scripts/release.py` now fail-closes on the same publish-grade quality checks used by
-tag publish: clean `main`, tests, builder smoke, `ResourceWarning` gate, lint,
-type checks, security scan, full novelty gate enforcement, and artifact build +
-`twine check`.
+Reproduce the PR-CI quality set locally:
+
+```bash
+python -m pytest tests/ -q
+python -m pytest tests/ -q -W error::ResourceWarning
+python scripts/smoke_builder_base.py
+python scripts/smoke_mcp_stdio.py
+ruff check src/ tests/
+mypy src/consolidation_memory/
+python -m bandit -q -ll -r src scripts -s B608,B110
+python scripts/generate_tool_reference.py --check
+```
+
+`scripts/release.py --bump patch --dry-run` is a **plan preview only**: it validates
+the clean-tree/`main`/tag state and prints the intended version and steps, then
+skips the quality gates, the release gates and the artifact build. It exits
+non-zero off `main`. Use it to check the target version, not to verify a release.
+
+Without `--dry-run`, `release.py` runs the same publish-grade checks as tag
+publish: clean `main`, tests with coverage, builder smoke, `ResourceWarning`
+gate, lint, type checks, security scan, full novelty gate enforcement, and
+artifact build + `twine check`, rolling back `pyproject.toml` and `CHANGELOG.md`
+on any failure. It bumps the version, commits, tags and pushes unless
+`--no-push`.
 
 ## CI Enforcement
 
-- PR CI (`test.yml`) runs quick novelty checks.
-- PR CI also validates wheel/sdist buildability and runs a dedicated optional-surface
-  job with the `all` + `dev` extras (covers `rest`, `openai`, `dashboard`, `desktop`
-  test suites).
-- Main-branch automation (`release-on-main.yml`) evaluates release criteria and only
-  creates a new release tag/version when eligible.
+- PR CI (`test.yml`) runs quick novelty checks: `novelty_eval --mode quick`,
+  `coding_agent_eval --mode quick` and `real_world_eval --mode ci` on the
+  fixture, each enforced on `overall_pass`.
+- PR CI runs the test matrix on Python 3.10–3.13 × ubuntu/windows, and on
+  3.13/ubuntu also the builder smoke, the **MCP stdio wire smoke**
+  (`scripts/smoke_mcp_stdio.py`, 8 checks incl. negotiated `protocolVersion`,
+  both `outputSchema` arms, and unknown-argument rejection as `isError`), the
+  `ResourceWarning` gate, lint, type check and the bandit security scan.
+- PR CI also validates wheel/sdist buildability and runs a dedicated
+  optional-surface job with the `all` + `dev` extras (covers `rest`, `openai`,
+  `dashboard`, `desktop` test suites).
+- Main-branch automation (`release-on-main.yml`) evaluates release criteria and
+  only creates a new release tag/version when eligible.
 - Tag publish (`publish.yml`) requires the tagged commit to be on `origin/main`,
-  runs release quality gates (tests/resource warnings/lint/mypy/security/smoke),
-  then runs full novelty evaluation + gate enforcement before build/publish.
+  runs release quality gates (tests/resource warnings/lint/mypy/security/builder
+  smoke), then runs full novelty evaluation + gate enforcement before
+  build/publish. **The stdio wire smoke is not part of the publish gate** — it
+  lives in PR CI only, so a green publish does not imply wire coverage.
 - Nightly (`novelty-full-nightly.yml`) refreshes full novelty + gate artifacts.
+- `release-docs-guard.yml` fails when release-automation files change without
+  matching updates in `docs/RELEASE_AUTOMATION.md` or `README.md`.
+- `changelog-on-main.yml` refreshes the `Unreleased` changelog section and
+  regenerates `docs/TOOLS.md` (both gated on the `RELEASE_AUTOMATION_PAT`
+  secret being configured).
 
 ## Policy Notes
 

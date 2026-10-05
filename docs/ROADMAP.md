@@ -23,8 +23,8 @@ Make local-first agent memory dependable for coding workflows: useful recall, ex
 - **Corpus hygiene** — `forget()` expires claims that lose all provenance; Hygiene tab + `corpus_hygiene` scan/apply for noisy episodes and orphaned claims
 - **Native desktop UI** — `consolidation-memory app` (PySide6) with Ask · Remember · Browse and system tray icon
 - ~~**MCP simple tools**~~ — `memory_remember` / `memory_ask` on MCP, REST (`POST /memory/remember`, `POST /memory/ask`), and OpenAI dispatch; browser UI uses the same aliases
-- **MCP spec surface** — server speaks protocol up to `2026-07-28`; every tool publishes a typed `outputSchema` (`anyOf[success, error]`), execution failures surface as `isError` with actionable text, unknown input arguments are rejected; see [MCP_GUIDE.md](MCP_GUIDE.md) and the generated [TOOLS.md](TOOLS.md)
-- **Scope discovery** — `memory_scope_list` aggregates existing scopes (no external registry needed) with usage counts and pageable windows; returned envelopes are reusable as `scope` arguments
+- **MCP spec surface** — the repository pins **no** protocol version: the host proposes one and the SDK negotiates it, and the handshake set is `2024-11-05` … `2025-11-25` (`2026-07-28` is modern-envelope only, so a `2026-07-28` handshake request is silently downgraded to `2025-11-25`); every tool publishes a typed `outputSchema` (`anyOf[success, error]`, self-healing on `tools/list` and enforced by a startup self-check), execution failures surface as `isError` with actionable text, unknown input arguments are rejected on MCP, on REST (HTTP 422) and on OpenAI dispatch; see [MCP_GUIDE.md](MCP_GUIDE.md) and the generated [TOOLS.md](TOOLS.md)
+- **Scope discovery** — `memory_scope_list` (and `GET /memory/scopes`) aggregates existing scopes (no external registry needed) with per-table usage counts and pageable windows; counts cover live rows only, and the result is intentionally **not** filtered by `read_visibility` — it is a topology audit, not a tenant boundary (see [ACL.md](ACL.md)); returned envelopes are reusable as `scope` arguments
 
 ## Adoption blockers (tracked)
 
