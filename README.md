@@ -218,9 +218,8 @@ silently overwrites an uncertain belief. Deep dive: [Architecture](docs/ARCHITEC
 
 ## How it compares
 
-Two honest columns: against the generic pattern, and against projects you
-may already know. Rows describe design choices, not scorecards — follow the
-links and judge.
+Two columns: the generic pattern, and projects you may already know. Rows are
+design choices, not scorecards — follow the links and judge.
 
 | Question | Typical vector RAG / chat memory | consolidation-memory | Named alternatives |
 | --- | --- | --- | --- |
@@ -341,12 +340,11 @@ consolidation-memory ui               # same server + browser UI at /ui/
 ```
 
 Same 29 tools over HTTP, with the same contract: every request body rejects
-unknown keys with **422** (the schemas promise `additionalProperties: false`),
-and `GET /memory/scopes` is the scope-discovery route
-(`memory_scope_list`, pageable via `limit`/`offset`).
-
-Bearer token required beyond loopback (`CONSOLIDATION_MEMORY_REST_AUTH_TOKEN`) — see
-[Security policy](SECURITY.md).
+unknown keys with **422** (the schemas promise `additionalProperties: false`).
+`GET /memory/scopes` is the scope-discovery route behind `memory_scope_list`
+(pageable via `limit`/`offset`). Beyond loopback, requests need
+`CONSOLIDATION_MEMORY_REST_AUTH_TOKEN`; a non-loopback bind without one is
+refused. See the [security policy](SECURITY.md).
 
 ### Graphical interfaces
 

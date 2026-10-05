@@ -30,7 +30,7 @@ Some tools are **scope-aware** by default; others are **global by design**.
 **Scope-aware reads and writes** (use resolved default scope when omitted):
 
 - `memory_store`, `memory_recall`, `memory_forget`, browse/search paths
-- Audit reads by default: `memory_contradictions`, `memory_decay_report`, `memory_status`, `memory_consolidation_log` use resolved default scope (same as recall/browse). Pass an explicit `scope` to narrow further.
+- Audit reads: `memory_contradictions`, `memory_decay_report`, `memory_status`, `memory_consolidation_log` — same default as recall/browse. Pass an explicit `scope` to narrow further.
 
 **Global by design** (intentionally corpus- or repo-wide):
 
@@ -75,8 +75,8 @@ For newcomers, prefer the plain-language aliases over raw store/recall parameter
 | Browser UI | `POST /ui/api/remember` | `POST /ui/api/ask` |
 
 `memory_remember` maps `kind` → episode `content_type` (`fix` → `solution`, `note` → `exchange`). `memory_ask`
-delegates to `memory_recall` and returns a trimmed preview-oriented payload. Agent hooks that require
-`memory_recall` on the first turn are unchanged — use `memory_ask` for ergonomic search afterward.
+delegates to `memory_recall` and returns a trimmed preview-oriented payload. Agent hooks that need
+`memory_recall` on the first turn keep working; `memory_ask` is the ergonomic follow-up.
 
 #### MCP simple profile
 
@@ -137,7 +137,8 @@ bandit -q -ll -r src scripts -s B608,B110
 `ruff` is pinned to `>=0.7.0,<0.17` and `[tool.ruff.lint] select` lists the
 enforced rules in full, with no `ignore` and no `per-file-ignores`: a new rule
 becomes active only by an explicit edit, and every suppression is a `# noqa`
-carrying its own reason. BLE001 is deliberately not selected.
+carrying its own reason. BLE001 is deliberately not selected. CI lints
+`src/ tests/`; the command above and the pre-push hook also cover `scripts/`.
 
 `pre_push_check.py` lints `scripts/` too and runs the stdio smoke only with
 `--mcp-smoke`:
