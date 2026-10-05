@@ -62,10 +62,12 @@ When the config file is missing, the page opens an in-browser wizard:
 - `POST /ui/api/setup/quick` — runs the same one-command flow as
   `consolidation-memory init --quick` and reports the result.
 
-The rest of the page is backed by small `/ui/api/*` routes (`overview`,
-`recent`, `ask`, `remember`, `consolidate`, `warmup`, `reindex`,
-`hygiene/*`, `daemon-install`, episode deletion) that delegate to the shared
-dispatch — the UI never has its own write path.
+The rest of the page is backed by small `/ui/api/*` routes. `ask`, `remember`,
+`consolidate` and episode deletion go through the shared dispatch, so the UI
+never has its own write path; `hygiene/*` calls the same `corpus_hygiene`
+implementations the two hygiene tools call; `overview`, `recent` and `metrics`
+are read helpers over `DashboardData`; and `warmup`, `reindex` and
+`daemon-install` reuse the same helpers as the matching `/ops/*` routes.
 
 ### Security
 
@@ -74,7 +76,11 @@ The UI inherits the REST trust rules (see
 
 - bound to loopback by default — no token needed;
 - any non-loopback bind is refused unless `CONSOLIDATION_MEMORY_REST_AUTH_TOKEN`
-  is set (`ui` validates the bind before starting);
+  is set (`ui` calls `validate_rest_bind` before starting);
+- `CONSOLIDATION_MEMORY_REST_ALLOW_PUBLIC_BIND` overrides that refusal and
+  waives the token requirement as well, so it exposes the API unauthenticated —
+  it is not a supported configuration (see
+  [SECURITY.md](../SECURITY.md#rest-api));
 - the browser UI and the REST API share one process and one token.
 
 ## TUI dashboard

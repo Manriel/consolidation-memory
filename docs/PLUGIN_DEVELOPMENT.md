@@ -5,8 +5,11 @@ behavior. Plugins are optional — the trust stack works without them.
 
 ## Hook surface
 
-Registered hooks (`consolidation_memory.plugins.PluginBase`, and the allowlist
-`plugins.HOOK_NAMES` that `fire()` validates against):
+Registered hooks, one row per entry of the `plugins.HOOK_NAMES` allowlist that
+`fire()` validates against — 11 hooks, matching the 11 `PluginBase` methods
+exactly. A plugin subclasses `PluginBase` and overrides only the hooks it needs;
+every base hook is a no-op. Exceptions raised inside a hook are caught and
+logged, so one failing plugin never blocks the host and never crashes recall.
 
 | Hook | Signature | When it fires |
 | --- | --- | --- |
@@ -21,10 +24,6 @@ Registered hooks (`consolidation_memory.plugins.PluginBase`, and the allowlist
 | `on_topic_updated` | `filename, title, record_count` | Existing topic merged/updated |
 | `on_contradiction` | `topic_filename, old_content, new_content` | Contradiction detected during merge |
 | `on_prune` | `episode_ids` | Episodes pruned after consolidation |
-
-Plugins must subclass `PluginBase` and only implement hooks they need; every
-base hook is a no-op. Exceptions raised inside a hook are caught and logged —
-one failing plugin never blocks the host, and it never crashes recall.
 
 ## Minimal plugin
 
@@ -48,7 +47,10 @@ Discovery runs in this order, once per process, and `on_startup` fires only when
 the first `MemoryClient` becomes active:
 
 1. **Entry points** — a package declares
-   `[project.entry-points."consolidation_memory.plugins"]` in its `pyproject.toml`.
+   `[project.entry-points."consolidation_memory.plugins"]` in its
+   `pyproject.toml`. The group name is the loader's `plugins._EP_GROUP`; each
+   entry point resolves to a `PluginBase` subclass that is instantiated with no
+   arguments.
 2. **Config file** — see below.
 3. **Programmatic** — `get_plugin_manager().register(instance)`.
 

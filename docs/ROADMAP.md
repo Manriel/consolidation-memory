@@ -21,20 +21,18 @@ Make local-first agent memory dependable for coding workflows: useful recall, ex
 - Policy ergonomics — `memory_policy_list` / `memory_policy_grant` on MCP, REST, and OpenAI dispatch; CLI `policy list|grant`
 - Simple agent surface — `memory_remember` / `memory_ask` on MCP, REST (`POST /memory/remember`, `POST /memory/ask`) and OpenAI dispatch; `CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE=simple` exposes 3 of the 29 full-profile tools
 - Scope discovery — `memory_scope_list` (and `GET /memory/scopes`) aggregates existing scopes (no external registry needed) with per-table usage counts and pageable windows. Counts cover live rows only, and the result is intentionally **not** filtered by `read_visibility` — it is a topology audit, not a tenant boundary (see [ACL.md](ACL.md#trust-boundary)); returned envelopes are reusable as `scope` arguments
-- MCP spec surface — the repository pins **no** protocol version: the host proposes one and the SDK negotiates it, and the handshake set is `2024-11-05` … `2025-11-25` (`2026-07-28` is modern-envelope only, so a `2026-07-28` handshake request is answered with `2025-11-25`). Every tool publishes a typed `outputSchema` (`anyOf[success, error]`, self-healing on `tools/list` and enforced by a startup self-check), execution failures surface as `isError` with actionable text, and unknown input arguments are rejected on MCP, on REST (HTTP 422) and on OpenAI dispatch — see [MCP_GUIDE.md](MCP_GUIDE.md) and the generated [TOOLS.md](TOOLS.md)
+- MCP spec surface — host-negotiated protocol revisions, a typed `outputSchema` per tool, `isError` execution failures and one strict argument contract enforced on every surface — see [MCP_GUIDE.md](MCP_GUIDE.md)
 - Corpus hygiene — `forget()` expires claims that lose all provenance; `memory_hygiene_scan` / `memory_hygiene_apply` clean noisy episodes and repair orphaned claims, exposed on every surface plus a Hygiene tab
 - Graphical surfaces — browser (`consolidation-memory ui`, Ask · Remember · Browse · Health · Hygiene · Metrics) with `init --quick` and an in-browser setup wizard when config is missing; Textual TUI (`consolidation-memory dashboard`); native desktop (`consolidation-memory app`, PySide6, system tray) — see [UI.md](UI.md)
 - Live recall evidence — trending `real_world_eval --mode full` on the live `universal` corpus; the published run and thresholds are in [REAL_WORLD_METRICS.md](REAL_WORLD_METRICS.md) and the CI fixture stays regression-only
 - Benchmark and positioning narrative — [LOCOMO_BENCHMARK.md](LOCOMO_BENCHMARK.md) (full run needs `OPENAI_API_KEY`), [examples/trust-vs-rag/](../examples/trust-vs-rag/) with `demo_flow.py`, [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) and the [examples/](../examples/) adapters
 
-## Adoption gaps
-
-Gaps between engineering maturity and broad adoption. Each item has a measurable done-when; struck entries are delivered and kept as a record of what the gap was.
+## Shipped adoption gaps
 
 | Priority | Gap | Done-when |
 | --- | --- | --- |
 | P0 | **No simple agent surface** — the full MCP profile overwhelms newcomers | ~~`memory_remember` / `memory_ask` + `CONSOLIDATION_MEMORY_MCP_TOOL_PROFILE=simple`~~ |
-| P0 | **Live recall proof** — synthetic CI passes; messy corpora underperform | ~~Trending `real_world_eval --mode full` on the live corpus~~ |
+| P0 | **Live recall proof** — synthetic CI passes; messy corpora underperform | ~~Trending `real_world_eval --mode full` on the live corpus~~ ([REAL_WORLD_METRICS.md](REAL_WORLD_METRICS.md)) |
 | P1 | **Setup friction** — Python path, embeddings, hooks, scope concepts | ~~One-command `init --quick` + `ui`; in-browser setup wizard when config missing~~ |
 | P1 | **Ops opacity** — stale consolidation / embedding health unclear to casual users | ~~Actionable health in the UIs plus warnings and fix-it flows (consolidate, reindex, warmup)~~ |
 | P1 | **Corpus hygiene** — forgetting episodes does not retract claims | ~~Claim expiry on `forget()`; `memory_hygiene_apply` for noisy corpora~~ |

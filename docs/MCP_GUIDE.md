@@ -431,11 +431,11 @@ variable without that prefix.
 
 ### Paths and projects
 
-| Variable | Purpose |
-| --- | --- |
-| `CONFIG` | Path to an alternate `config.toml` |
-| `DATA_DIR` | Base data directory (default: platform data dir) |
-| `PROJECT` | Active project slug (default: `default`) |
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CONFIG` | unset | Path to an alternate `config.toml`; unset discovers one in the platform config dir |
+| `DATA_DIR` | platform data dir | Base data directory — the per-project `DATA_DIR` is derived below it as `projects/<project>` |
+| `PROJECT` | `default` | Active project slug |
 
 ### Backends
 
@@ -484,10 +484,10 @@ variable without that prefix.
 
 ### REST (when the HTTP surface is enabled)
 
-| Variable | Purpose |
-| --- | --- |
-| `REST_AUTH_TOKEN` | Bearer token (required beyond loopback) |
-| `REST_ALLOW_PUBLIC_BIND` | Explicit opt-in for non-loopback bind |
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `REST_AUTH_TOKEN` | unset | Bearer token; required for any bind outside loopback |
+| `REST_ALLOW_PUBLIC_BIND` | unset (falsy) | Disables **both** non-loopback refusals — the startup bind check and the 503 middleware gate — and with no token set leaves the whole memory API reachable unauthenticated. Not a supported configuration; see [SECURITY.md — REST API](../SECURITY.md#rest-api) |
 
 ## Recipes
 

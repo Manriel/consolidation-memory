@@ -38,11 +38,20 @@ request that reaches a non-loopback host anyway.
 `CONSOLIDATION_MEMORY_REST_ALLOW_PUBLIC_BIND=true` disables both refusals and is not
 a supported configuration.
 
-The tool surface is 32 paths under `/memory` plus `/health` — 35 method+path pairs, since `status`, `browse` and `decay-report` each answer both `GET` and `POST` — covering the same 29 tools as MCP and OpenAI dispatch (per-tool schemas in [docs/TOOLS.md](docs/TOOLS.md)). Seven `/ops/*` routes (overview, metrics, daemon status/install, consolidate, warmup, reindex) sit outside that surface and are authenticated like the rest.
+The tool surface is **31 distinct paths** under `/memory` answering **34 method+path
+pairs**: one route per tool (29), two convenience path aliases
+(`DELETE /memory/episodes/{episode_id}` for `memory_forget` and
+`GET /memory/topics/{filename}` for `memory_read_topic`), and a bodyless `GET`
+twin for the three tools that take a `scope` (`status`, `browse`,
+`decay-report`). It covers the same 29 tools as MCP and OpenAI dispatch
+(per-tool schemas in [docs/TOOLS.md](docs/TOOLS.md)). `GET /health` adds one
+path and one pair, for 32 paths and 35 pairs. Seven `/ops/*` routes (overview,
+metrics, daemon status/install, consolidate, warmup, reindex) sit outside that
+surface and are authenticated like the rest.
 
 Bodyless routes can only answer for the deployment, never for a caller-supplied scope: `GET /memory/status`, `GET /memory/browse`, `GET /memory/decay-report`, `GET /memory/topics/{filename}`, `GET /memory/policy`, `GET /memory/hygiene/scan` and `GET /memory/scopes`. The `POST` variants of `status`, `browse` and `decay-report` accept an explicit `scope` and are the scoped forms; `POST /memory/policy/grant` and `POST /memory/hygiene/apply` are separate operations, not scoped twins.
 
-#### Scope discovery discloses deployment topology
+#### Audit tools disclose deployment topology
 
 `memory_scope_list` and `GET /memory/scopes` return the deployment's scope topology — namespaces, projects, app clients, agents, sessions — with per-table row counts (`episodes`, `records`, `topics`), most-recently-used first, pageable via `limit`/`offset`.
 
@@ -51,7 +60,9 @@ The result is **intentionally global**: not filtered by `read_visibility`, by po
 - It is a topology **audit** tool. The value is in showing what the deployment actually contains, including scopes the caller cannot read into.
 - The transport already grants far more (see the stdio boundary above): the REST token authenticates the transport, not a tenant boundary.
 
-`docs/ACL.md` separates principals *inside* one deployment. Treat scope discovery as deployment-scoped metadata, not tenant isolation, and do not expose either surface to mutually distrusting tenants.
+`memory_policy_list` and `GET /memory/policy` are unfiltered for the same reason and return **every persisted ACL binding**. A filtered grant table hides exactly the misconfigured binding a topology audit is meant to surface.
+
+`docs/ACL.md` separates principals *inside* one deployment. Treat both audit surfaces as deployment-scoped metadata, not tenant isolation, and do not expose either to mutually distrusting tenants. Per-tool rationale: [ACL.md — Tools intentionally outside the read filter](docs/ACL.md#tools-intentionally-outside-the-read-filter).
 
 ### Python SDK
 
@@ -60,7 +71,7 @@ reads/writes the same on-disk project data as MCP.
 
 ## Policy Coverage (`write_mode`)
 
-`write_mode='deny'` is enforced in `client.py` by `_write_denied_message`, called from each of the six write paths below. A denial is a business outcome, not a transport error: the call succeeds and the payload carries `status: "write_denied"`.
+`write_mode='deny'` is enforced in [`client.py`](src/consolidation_memory/client.py) by `_write_denied_message`, at six points covering the seven write tools below — `memory_remember` re-translates onto the store path, and the batch path denies per item. A denial is a business outcome, not a transport error: the call succeeds and the payload carries `status: "write_denied"`.
 
 Gated: `memory_store`, `memory_remember`, `memory_store_batch`, `memory_outcome_record`, `memory_forget`, `memory_correct`, `memory_protect`.
 
