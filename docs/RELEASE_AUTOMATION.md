@@ -68,6 +68,74 @@ python scripts/update_changelog.py --commit --push
 
 `--commit` allows a dirty tree when **only** `CHANGELOG.md` changed (for example after running the updater once, then committing in a second command). Other uncommitted files still block `--commit`.
 
+## Changelog Entry Limit
+
+`scripts/changelog_builder.py` keeps at most **200** bullets per release section
+(`DEFAULT_SUBJECT_LIMIT`). Both entry points expose the same knob:
+
+```bash
+python scripts/update_changelog.py --limit 400
+python scripts/release.py --bump minor --limit 400
+```
+
+200 is a runaway guard, not a routine filter: the largest release range in this
+repository's history is 27 commits, and 200 bullets is only a few kilobytes of
+Markdown. The previous default of 20 sat below real range sizes and silently
+dropped the oldest entries of any busy release.
+
+### What is dropped first
+
+When a range exceeds the limit, entries are ranked before the cut. The surviving
+order is newest-first, as before, but the selection is not:
+
+- **Kept first** — `feat:`, `fix:`, `perf:`, `security:`, `revert:`, breaking
+  subjects (`type(scope)!:`), unclassifiable subjects, and any dependency-scope
+  change such as `chore(deps):` or `build(deps-dev):` (a raised dependency floor
+  breaks downstream pins even when the subject reads like maintenance).
+- **Dropped first** — `docs:`, `chore:`, `test:`, `ci:`, `style:`, `refactor:`,
+  `build:` without a dependency scope.
+- **Dropped last** — user-visible entries, oldest first, and only when they
+  outnumber the limit on their own.
+
+So a `docs:`/`chore:` wave can never displace a user-visible change. The
+semver bump policy is unaffected: a breaking change still ships as a minor in
+0.x.
+
+### How entries are grouped
+
+Bullets are rendered under `### Features`, `### Bug Fixes`, `### Performance`,
+`### Security`, `### Dependencies`, `### Refactoring`, `### Documentation`,
+`### Internal`, `### Other`, in that order. Dependency-scope changes get their own
+`### Dependencies` section rather than `### Internal`, so a raised dependency
+floor is visible to the reader it affects.
+
+### The truncation warning
+
+Truncation is never silent. The builder raises
+`ChangelogTruncationWarning` (a `UserWarning`), and both scripts print the
+report to **stderr** and add a `::warning::` annotation when running under GitHub
+Actions. Nothing is written into `CHANGELOG.md`.
+
+```text
+[changelog] WARNING: Changelog truncated: kept 8 of 26 releasable commits (limit 8).
+[changelog] WARNING: Dropped 18 entries: 18 internal (docs/chore/test/ci/refactor/style/build) and 0 user-visible (feat/fix/perf/security/breaking).
+[changelog] WARNING: No user-visible change was lost; only maintainer-facing entries were dropped.
+[changelog] WARNING: Re-run with a higher limit (for example --limit 26) to keep every entry.
+[changelog] WARNING: Dropped entries:
+[changelog] WARNING:   - docs: rebuild the README around the knowledge-layer story
+...
+```
+
+When user-visible changes *are* dropped, the report says so explicitly
+(`User-visible changes were dropped (oldest first). Raise the limit before
+releasing.`) and lists the lost subjects. Every run also prints a
+`[changelog] NOTE:` line naming how many merge, release, `[skip release]`, and
+duplicate commits were skipped.
+
+**Before releasing** with a warning in the log, re-run with the suggested
+`--limit` value (or edit the `## Unreleased` section by hand) so no change ships
+undocumented.
+
 ## Criteria
 
 The criteria engine is deterministic:
@@ -141,6 +209,23 @@ Symptoms:
 Fix:
 
 - Update `docs/RELEASE_AUTOMATION.md` or `README.md` in the **same commit** whenever you change release automation scripts or workflows (`release-on-main.yml`, `changelog-on-main.yml`, `update_changelog.py`, etc.).
+
+### Changelog truncated warning in the log
+
+Symptoms:
+
+- `Update Changelog On Main` or the release job logs `[changelog] WARNING: Changelog truncated: kept N of M releasable commits`.
+- GitHub annotates the run with `Changelog truncated to N/M commits`.
+
+Cause:
+
+- The range exceeded `DEFAULT_SUBJECT_LIMIT` (200), or a lower `--limit` was passed.
+
+Fix:
+
+1. Read the `Dropped entries:` list in the log.
+2. Re-run with the suggested limit, for example `python scripts/update_changelog.py --limit 400` (or `python scripts/release.py --bump minor --limit 400`).
+3. If the warning says user-visible changes were dropped, do not release until they appear in `## Unreleased` — re-run with the higher limit, or add the missing bullets by hand.
 
 ### How to force one release now
 
