@@ -29,11 +29,11 @@ from typing import Literal, TypeAlias, cast
 try:
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import JSONResponse
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, ConfigDict, Field
 except ImportError:
     raise ImportError(
         "REST API requires FastAPI. Install with: pip install consolidation-memory[rest]"
-    )
+    ) from None
 
 from contextlib import asynccontextmanager
 
@@ -202,20 +202,42 @@ def _extract_bearer_token(auth_header: str) -> str | None:
 # ── Pydantic request models ─────────────────────────────────────────────────
 
 
-class SimpleRememberRequest(BaseModel):
+class StrictRequestModel(BaseModel):
+    """Base for REST request bodies that mirror a published tool ``inputSchema``.
+
+    Pydantic defaults to ``extra="ignore"``, so an undeclared body key used to be
+    discarded *here* — before ``tool_dispatch.reject_unknown_arguments`` ever saw
+    it. REST then accepted junk that MCP rejects, and the dispatch seam could
+    not enforce the contract on this surface. Every published tool schema
+    declares ``additionalProperties: false``, so these bodies forbid extras too
+    and FastAPI turns a violation into a 422 whose error entry names the
+    offending key.
+
+    Only the top-level bodies are strict. The nested models below
+    (``EpisodeInput``, ``OutcomeAnchorInput``) describe values the published
+    schemas type as plain objects (``episodes``/``code_anchors`` are arrays of
+    objects with no ``additionalProperties``), which MCP and dispatch still
+    accept extras for; forbidding them here would make REST the only surface that
+    rejects them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SimpleRememberRequest(StrictRequestModel):
     content: str = Field(min_length=1, max_length=50_000)
     kind: Literal["note", "fact", "fix", "preference"] = "note"
     tags: list[str] | None = None
     scope: _ScopeInput | None = None
 
 
-class SimpleAskRequest(BaseModel):
+class SimpleAskRequest(StrictRequestModel):
     query: str = Field(min_length=1, max_length=_MAX_QUERY_LENGTH)
     n_results: int = Field(default=8, ge=1, le=20)
     scope: _ScopeInput | None = None
 
 
-class StoreRequest(BaseModel):
+class StoreRequest(StrictRequestModel):
     content: str = Field(max_length=50_000)
     content_type: _ContentTypeLiteral = "exchange"
     tags: list[str] | None = None
@@ -223,7 +245,7 @@ class StoreRequest(BaseModel):
     scope: _ScopeInput | None = None
 
 
-class RecallRequest(BaseModel):
+class RecallRequest(StrictRequestModel):
     query: str = Field(max_length=_MAX_QUERY_LENGTH)
     n_results: int = Field(default=10, ge=1, le=50)
     include_knowledge: bool = True
@@ -245,12 +267,12 @@ class EpisodeInput(BaseModel):
     surprise: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
-class BatchStoreRequest(BaseModel):
+class BatchStoreRequest(StrictRequestModel):
     episodes: list[EpisodeInput] = Field(max_length=_MAX_BATCH_SIZE)
     scope: _ScopeInput | None = None
 
 
-class SearchRequest(BaseModel):
+class SearchRequest(StrictRequestModel):
     query: str | None = Field(default=None, max_length=_MAX_QUERY_LENGTH)
     content_types: list[_ContentTypeLiteral] | None = None
     tags: list[str] | None = None
@@ -260,14 +282,14 @@ class SearchRequest(BaseModel):
     scope: _ScopeInput | None = None
 
 
-class ClaimBrowseRequest(BaseModel):
+class ClaimBrowseRequest(StrictRequestModel):
     claim_type: str | None = Field(default=None, max_length=64)
     as_of: str | None = Field(default=None, max_length=64)
     limit: int = Field(default=50, ge=1, le=200)
     scope: _ScopeInput | None = None
 
 
-class ClaimSearchRequest(BaseModel):
+class ClaimSearchRequest(StrictRequestModel):
     query: str = Field(max_length=_MAX_QUERY_LENGTH)
     claim_type: str | None = Field(default=None, max_length=64)
     as_of: str | None = Field(default=None, max_length=64)
@@ -280,7 +302,7 @@ class OutcomeAnchorInput(BaseModel):
     anchor_value: str = Field(max_length=_MAX_PATH_LENGTH)
 
 
-class OutcomeRecordRequest(BaseModel):
+class OutcomeRecordRequest(StrictRequestModel):
     action_summary: str = Field(max_length=_MAX_QUERY_LENGTH)
     outcome_type: Literal["success", "failure", "partial_success", "reverted", "superseded"]
     source_claim_ids: list[str] | None = None
@@ -298,7 +320,7 @@ class OutcomeRecordRequest(BaseModel):
     scope: _ScopeInput | None = None
 
 
-class OutcomeBrowseRequest(BaseModel):
+class OutcomeBrowseRequest(StrictRequestModel):
     outcome_type: Literal["success", "failure", "partial_success", "reverted", "superseded"] | None = None
     action_key: str | None = Field(default=None, max_length=_MAX_FILENAME_LENGTH)
     source_claim_id: str | None = Field(default=None, max_length=_MAX_FILENAME_LENGTH)
@@ -309,77 +331,77 @@ class OutcomeBrowseRequest(BaseModel):
     scope: _ScopeInput | None = None
 
 
-class DetectDriftRequest(BaseModel):
+class DetectDriftRequest(StrictRequestModel):
     base_ref: str | None = Field(default=None, max_length=_MAX_FILENAME_LENGTH)
     repo_path: str | None = Field(default=None, max_length=_MAX_PATH_LENGTH)
 
 
-class CorrectRequest(BaseModel):
+class CorrectRequest(StrictRequestModel):
     topic_filename: str = Field(max_length=_MAX_FILENAME_LENGTH)
     correction: str = Field(max_length=50_000)
     scope: _ScopeInput | None = None
 
 
-class ExportRequest(BaseModel):
+class ExportRequest(StrictRequestModel):
     scope: _ScopeInput | None = None
 
 
-class ForgetRequest(BaseModel):
+class ForgetRequest(StrictRequestModel):
     episode_id: str = Field(max_length=_MAX_FILENAME_LENGTH)
     scope: _ScopeInput | None = None
 
 
-class ProtectRequest(BaseModel):
+class ProtectRequest(StrictRequestModel):
     episode_id: str | None = Field(default=None, max_length=_MAX_FILENAME_LENGTH)
     tag: str | None = Field(default=None, max_length=100)
     scope: _ScopeInput | None = None
 
 
-class TimelineRequest(BaseModel):
+class TimelineRequest(StrictRequestModel):
     topic: str = Field(max_length=_MAX_TOPIC_LENGTH)
     scope: _ScopeInput | None = None
 
 
-class BrowseRequest(BaseModel):
+class BrowseRequest(StrictRequestModel):
     scope: _ScopeInput | None = None
 
 
-class ReadTopicRequest(BaseModel):
+class ReadTopicRequest(StrictRequestModel):
     filename: str = Field(max_length=_MAX_FILENAME_LENGTH)
     scope: _ScopeInput | None = None
 
 
-class ContradictionsRequest(BaseModel):
+class ContradictionsRequest(StrictRequestModel):
     topic: str | None = Field(default=None, max_length=_MAX_FILENAME_LENGTH)
     scope: _ScopeInput | None = None
     global_scope: bool = False
 
 
-class StatusRequest(BaseModel):
+class StatusRequest(StrictRequestModel):
     lightweight: bool | None = None
     scope: _ScopeInput | None = None
     global_scope: bool = False
 
 
-class DecayReportRequest(BaseModel):
+class DecayReportRequest(StrictRequestModel):
     scope: _ScopeInput | None = None
     global_scope: bool = False
 
 
-class ConsolidationLogRequest(BaseModel):
+class ConsolidationLogRequest(StrictRequestModel):
     last_n: int = Field(default=5, ge=1, le=20)
     scope: _ScopeInput | None = None
     global_scope: bool = False
 
 
-class HygieneApplyRequest(BaseModel):
+class HygieneApplyRequest(StrictRequestModel):
     episode_ids: list[str] | None = None
     use_recommended: bool = False
     expire_orphans: bool = False
     dry_run: bool = False
 
 
-class PolicyGrantRequest(BaseModel):
+class PolicyGrantRequest(StrictRequestModel):
     principal_type: str
     principal_key: str
     namespace: str | None = None

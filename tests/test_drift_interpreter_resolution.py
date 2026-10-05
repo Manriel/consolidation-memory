@@ -73,6 +73,24 @@ def symlinked_venv(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return python_path
 
 
+@pytest.fixture(scope="module")
+def clean_source_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Sources reachable by ``PYTHONPATH`` with no distribution metadata beside them.
+
+    A develop-mode install (``pip install -e .`` with the legacy backend) leaves
+    ``src/consolidation_memory.egg-info`` in the tree, and that directory alone
+    lets ``importlib.metadata`` resolve a version. Copying the package to a
+    scratch root keeps the precondition reproducible on any machine.
+    """
+    root = tmp_path_factory.mktemp("clean-source") / "src"
+    shutil.copytree(
+        _REPO_SRC / "consolidation_memory",
+        root / "consolidation_memory",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info", "*.dist-info"),
+    )
+    return root
+
+
 def test_symlinked_venv_keeps_its_own_environment(symlinked_venv: Path) -> None:
     """Precondition: the symlinked interpreter is a real, separate environment."""
     probe = subprocess.run(
@@ -88,7 +106,9 @@ def test_symlinked_venv_keeps_its_own_environment(symlinked_venv: Path) -> None:
     assert Path(base_prefix_value) != Path(venv_prefix_value)
 
 
-def test_base_interpreter_has_no_distribution_metadata(symlinked_venv: Path) -> None:
+def test_base_interpreter_has_no_distribution_metadata(
+    symlinked_venv: Path, clean_source_root: Path
+) -> None:
     """Precondition: the dist-info stays invisible even with the sources reachable.
 
     This is what made the old code crash with ``PackageNotFoundError`` once the
@@ -100,11 +120,26 @@ def test_base_interpreter_has_no_distribution_metadata(symlinked_venv: Path) -> 
         text=True,
         timeout=120,
         check=False,
-        env={**os.environ, "PYTHONPATH": str(_REPO_SRC)},
+        env={**os.environ, "PYTHONPATH": str(clean_source_root)},
     )
 
     assert probe.returncode != 0
     assert "PackageNotFoundError" in probe.stderr
+
+
+def test_clean_source_root_really_has_no_distribution_metadata(
+    clean_source_root: Path,
+) -> None:
+    """The precondition above is hermetic, not an accident of the working copy.
+
+    A develop-mode install leaves a ``src/*.egg-info`` behind, and that directory
+    is enough for ``importlib.metadata`` to resolve a version from sources alone.
+    Depending on its absence would make this suite machine-dependent — which is
+    exactly how the original bug hid.
+    """
+    assert not list(clean_source_root.glob("*.egg-info"))
+    assert not list(clean_source_root.glob("*.dist-info"))
+    assert (clean_source_root / "consolidation_memory" / "__init__.py").is_file()
 
 
 def test_resolve_python_executable_keeps_the_virtualenv(

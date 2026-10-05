@@ -70,7 +70,13 @@ from consolidation_memory.tool_contracts import (
     TimelineOutput,
     TopicDetailOutput,
 )
-from consolidation_memory.tool_dispatch import execute_tool_call, tool_requires_client
+from consolidation_memory.tool_dispatch import (
+    ToolContractError,
+    accepted_argument_names,
+    execute_tool_call,
+    reject_unknown_arguments,
+    tool_requires_client,
+)
 
 # Configure logging to stderr (stdout is the MCP JSON-RPC channel).
 logging.basicConfig(
@@ -915,6 +921,9 @@ async def lifespan(server: MCPServer):
     # (late registration, or a private mcp SDK surface moving). Cheap: the
     # already-published tools are cache hits.
     _publish_and_verify_output_schemas()
+    # Re-check that the argument set the SDK enforces is still the published one,
+    # in case a tool was registered after the import-time check.
+    _verify_published_argument_contract()
     _preload_numeric_backends()
     if _warmup_on_start() and _runtime_started and _startup_error is None:
         _warmup_task = asyncio.create_task(_warm_client_background())
@@ -956,6 +965,14 @@ async def lifespan(server: MCPServer):
 # because each tool's arg model is derived from ArgModelBase at registration
 # time. mcp_compat owns every private mcp import; see its module docstring for
 # the surfaces used and why a minor mcp bump can break them.
+#
+# This is the MCP fast path, not a second contract: the SDK validates arguments
+# from the handler signature before any body runs, so a rejected key never
+# reaches tool_dispatch.reject_unknown_arguments. "Which arguments are allowed"
+# therefore has two implementations that must agree — the signature-derived arg
+# model below and the published contract the shared helper reads. Startup
+# enforces that agreement in _verify_published_argument_contract(), which asks
+# the shared helper about every registered tool and fails on any divergence.
 mcp_compat.ArgModelBase.model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
 mcp = MCPServer("consolidation_memory", lifespan=lifespan)
@@ -1926,7 +1943,73 @@ def _publish_and_verify_output_schemas() -> None:
     _verify_published_output_schemas(_publish_output_schemas())
 
 
+# Sentinel argument name probed against the shared contract. It is not a
+# published key of any tool, so accepting it is a contract failure.
+_ARGUMENT_DRIFT_PROBE = "undeclared_contract_probe"
+
+
+def _verify_published_argument_contract() -> None:
+    """Fail startup unless the SDK's enforced arguments are the dispatch contract.
+
+    The two surfaces cannot share one code path: the MCP SDK validates a request
+    against the per-tool arg model derived from the handler signature *before*
+    any body runs, so ``reject_unknown_arguments`` is unreachable for MCP calls
+    and the SDK check stays as the fast path. What this guard adds is the
+    delegation that is possible — every registered tool is looked up in
+    :func:`tool_dispatch.accepted_argument_names` (the published contract, read
+    from ``schemas.openai_tools``) and compared with the argument set the SDK
+    actually enforces, in both directions: the shared helper must accept every
+    name the SDK accepts, and must refuse an undeclared key.
+
+    A silent divergence here is the exact failure this PR exists to prevent: MCP
+    would reject a key the other three surfaces run happily, or accept one they
+    refuse. Raise at startup instead.
+    """
+    problems: list[str] = []
+    for name, tool in mcp_compat.registered_tools(mcp).items():
+        enforced = frozenset((getattr(tool, "parameters", None) or {}).get("properties") or {})
+        shared = accepted_argument_names(name)
+        if shared is None:
+            problems.append(
+                f"{name}: registered on MCP but absent from schemas.openai_tools, so the "
+                "dispatch seam enforces no contract for it"
+            )
+            continue
+        if enforced != shared:
+            problems.append(
+                f"{name}: MCP accepts {sorted(enforced) or '[]'} but the published inputSchema "
+                f"declares {sorted(shared) or '[]'}"
+            )
+            continue
+        parameters = getattr(tool, "parameters", None) or {}
+        if parameters.get("additionalProperties") is not False:
+            problems.append(
+                f"{name}: MCP inputSchema does not publish additionalProperties: false, so "
+                "the SDK lost its strict extra-key check"
+            )
+        try:
+            reject_unknown_arguments(name, {key: None for key in enforced})
+        except ToolContractError as exc:
+            problems.append(f"{name}: the SDK accepts arguments the shared contract refuses ({exc})")
+        try:
+            reject_unknown_arguments(name, {_ARGUMENT_DRIFT_PROBE: None})
+        except ToolContractError:
+            continue
+        problems.append(
+            f"{name}: the shared contract accepts {_ARGUMENT_DRIFT_PROBE!r}, which MCP rejects"
+        )
+    if not problems:
+        return
+    raise mcp_compat.MCPCompatError(
+        "MCP tool-argument contract has drifted from the published inputSchema: "
+        + "; ".join(problems)
+        + ". Keep the handler signature and the published schema in sync; both surfaces enforce "
+        "the published inputSchema and must accept exactly the same argument names."
+    )
+
+
 _publish_and_verify_output_schemas()
+_verify_published_argument_contract()
 mcp_compat.install_list_tools_heal(mcp, _publish_output_schemas)
 
 

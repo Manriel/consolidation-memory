@@ -45,6 +45,8 @@ _LAZY_IMPORTS = {
     "DecayReportResult": "consolidation_memory.types",
     "ProtectResult": "consolidation_memory.types",
     "ContradictionResult": "consolidation_memory.types",
+    "ConsolidationLogResult": "consolidation_memory.types",
+    "HygieneApplyResult": "consolidation_memory.types",
     "ContentType": "consolidation_memory.types",
     "RecordType": "consolidation_memory.types",
     "OutcomeType": "consolidation_memory.types",
