@@ -159,6 +159,17 @@ def test_error_payloads_validate_against_published_schemas() -> None:
         degraded = _call("memory_detect_drift", "degraded_timeout", expect_success=False, base_ref="main")
         assert degraded.is_error is True
 
+    # The degraded payload satisfies both arms of the published anyOf, so
+    # validating it proves nothing. It must carry the error arm's required key,
+    # or a client that checks `error` reads a timeout as a successful empty scan.
+    assert degraded.structured_content.get("error"), (
+        "degraded drift payload has no `error` key; it validates against the "
+        "success arm and reads as an empty scan"
+    )
+    arms = _published_schema("memory_detect_drift")["anyOf"]
+    error_arm = next(arm for arm in arms if "error" in (arm.get("properties") or {}))
+    assert set(error_arm["required"]) <= set(degraded.structured_content)
+
     async def drift_crash(*args: Any, **kwargs: Any) -> dict[str, object]:
         raise RuntimeError("drift worker exploded")
 

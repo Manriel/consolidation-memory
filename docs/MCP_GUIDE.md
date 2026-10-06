@@ -426,8 +426,11 @@ ceiling instead (180s drift, 90s client init, 90s recall, 20s recall fallback,
   (shorter query, lower `n_results`, raise the budget).
 - **`memory_detect_drift`**: first scan with `base_ref` times out → retry
   without `base_ref` (payload carries a `message` about the fallback) → if
-  that fails too, a degraded result: full shape with empty lists and a
-  `message`, reported as `isError: true`.
+  that fails too, a degraded result: full `DriftScanOutput` shape with empty
+  lists, plus `message` **and `error`**, reported as `isError: true`. The `error`
+  key is what makes it validate against the error arm — without it the payload
+  also matched the success arm, and a client reading `structuredContent` saw a
+  successful empty scan.
 - **`memory_consolidate`**: bounded by its own budget; timeouts and crashes
   are `isError: true` with the exact variable to raise.
 

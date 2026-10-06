@@ -915,12 +915,21 @@ async def _call_tool_result(
 
 
 def _degraded_drift_output(*, message: str) -> dict[str, object]:
+    """Degraded drift payload for a timed-out scan.
+
+    Carries the full `DriftScanOutput` shape with empty lists *and* an `error`
+    key. The shape alone matched the success arm of the published
+    `anyOf[success, error]`, so a client validating `structuredContent` read a
+    timeout as a successful empty scan; the `error` key is what the error arm
+    requires, so the same payload now validates as the failure it is.
+    """
     return {
         "checked_anchors": [],
         "impacted_claim_ids": [],
         "challenged_claim_ids": [],
         "impacts": [],
         "message": message,
+        "error": message,
     }
 
 
@@ -1608,7 +1617,8 @@ async def memory_detect_drift(
 
         message = (
             f"memory_detect_drift timed out after {timeout_seconds:g}s. "
-            "Returned a degraded empty result instead of failing."
+            "Returned a degraded empty result; structuredContent carries the "
+            "DriftScanOutput shape with empty lists plus an `error` key."
         )
         logger.error(message)
         return _tool_error_result(message, structured=_degraded_drift_output(message=message))

@@ -300,6 +300,15 @@ class DriftScanOutput(_Output):
         default=None,
         description="Present on degraded runs: explains timeouts or fallback scans.",
     )
+    error: str | None = Field(
+        default=None,
+        description=(
+            "Present when the result is a failure, not a successful empty scan: "
+            "carries the same text as the isError content block, so a client "
+            "validating against the error arm of this schema can tell a timeout "
+            "from an empty result."
+        ),
+    )
 
 
 class ForgetOutput(_Output):

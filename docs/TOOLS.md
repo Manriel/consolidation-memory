@@ -337,6 +337,7 @@ Detect code drift by checking changed files and challenge impacted claims. Use a
 | `challenged_claim_ids` | `string[]` | yes | Claims moved to challenged status. |
 | `impacts` | `DriftClaimImpactOutput[]` | yes | Per-claim status transitions caused by the drift. |
 | `message` | `string \| null` | no | Present on degraded runs: explains timeouts or fallback scans. |
+| `error` | `string \| null` | no | Present when the result is a failure, not a successful empty scan: carries the same text as the isError content block, so a client validating against the error arm of this schema can tell a timeout from an empty result. |
 
 ## memory_status
 
