@@ -40,11 +40,31 @@ _MAX_TOPIC_LENGTH = 500
 _MAX_FILENAME_LENGTH = 255
 _MAX_PATH_LENGTH = 4096
 
+def _nullable_str(max_length: int) -> dict[str, Any]:
+    """A scope string field that also accepts ``null``.
+
+    ``memory_scope_list`` publishes discovered envelopes with ``null`` for every
+    identity key a row does not carry, and the guide promises an entry can be
+    passed back verbatim. A host that validates arguments against this schema
+    (``additionalProperties: false``, strings only) rejected that envelope while
+    MCP and REST accepted it, so the surfaces disagreed. Coercion already treated
+    ``null`` as "not set" for all of them.
+    """
+    return {"type": ["string", "null"], "maxLength": max_length}
+
+
+def _nullable_section(properties: dict[str, Any]) -> dict[str, Any]:
+    """A scope sub-object that may be ``null`` (``agent``, ``session``)."""
+    return {"type": ["object", "null"], "additionalProperties": False, "properties": properties}
+
+
 SCOPE_ENVELOPE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "description": (
         "Optional canonical scope envelope for universal shared memory. "
-        "If omitted, legacy single-project defaults are used."
+        "If omitted, legacy single-project defaults are used. "
+        "A memory_scope_list envelope round-trips verbatim: absent identity keys "
+        "arrive as null and mean 'not set'."
     ),
     "additionalProperties": False,
     "properties": {
@@ -56,8 +76,8 @@ SCOPE_ENVELOPE_SCHEMA: dict[str, Any] = {
                 "slug": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
                 "display_name": {"type": "string", "maxLength": _MAX_TOPIC_LENGTH},
                 "sharing_mode": {
-                    "type": "string",
-                    "enum": ["private", "shared", "team", "managed"],
+                    "type": ["string", "null"],
+                    "enum": ["private", "shared", "team", "managed", None],
                 },
             },
         },
@@ -81,43 +101,39 @@ SCOPE_ENVELOPE_SCHEMA: dict[str, Any] = {
                     ],
                 },
                 "name": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
-                "provider": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
-                "external_key": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
+                "provider": _nullable_str(_MAX_FILENAME_LENGTH),
+                "external_key": _nullable_str(_MAX_FILENAME_LENGTH),
             },
         },
-        "agent": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
+        "agent": _nullable_section(
+            {
                 "id": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
                 "name": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
                 "external_key": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
                 "model_provider": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
                 "model_name": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
-            },
-        },
-        "session": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
+            }
+        ),
+        "session": _nullable_section(
+            {
                 "id": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
                 "external_key": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
                 "session_kind": {
-                    "type": "string",
-                    "enum": ["conversation", "thread", "workflow", "job"],
+                    "type": ["string", "null"],
+                    "enum": ["conversation", "thread", "workflow", "job", None],
                 },
-            },
-        },
+            }
+        ),
         "project": {
             "type": "object",
             "additionalProperties": False,
             "properties": {
                 "id": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
                 "slug": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
-                "display_name": {"type": "string", "maxLength": _MAX_TOPIC_LENGTH},
-                "root_uri": {"type": "string", "maxLength": _MAX_PATH_LENGTH},
-                "repo_remote": {"type": "string", "maxLength": _MAX_PATH_LENGTH},
-                "default_branch": {"type": "string", "maxLength": _MAX_FILENAME_LENGTH},
+                "display_name": _nullable_str(_MAX_TOPIC_LENGTH),
+                "root_uri": _nullable_str(_MAX_PATH_LENGTH),
+                "repo_remote": _nullable_str(_MAX_PATH_LENGTH),
+                "default_branch": _nullable_str(_MAX_FILENAME_LENGTH),
             },
         },
         "policy": {

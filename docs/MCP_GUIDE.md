@@ -301,12 +301,25 @@ reusable in both directions.
 - Page with `limit` (1–1000) + `offset`; `message` tells you where the window
   sits (`"Showing N of T scopes at offset ..."`) and `total` is the full count.
 - Each returned `scope` can be passed **verbatim** back as the `scope`
-  argument of any other tool.
-- Grouping uses all 11 canonical scope keys — the same set the read and write
-  filters match on — so two scopes that differ only in `agent_name`,
+  argument of any other tool. The published scope schema accepts the `null`s
+  that discovery emits (`agent`, `session`, and unset identity keys inside
+  `app_client` and `project`); `null` means "not set" and coercion treats it
+  exactly like an absent key. A host that validates arguments against the
+  published schema therefore accepts the envelope too.
+- Grouping uses all 11 canonical scope keys — the same set the **write** filter
+  matches on — so two scopes that differ only in `agent_name`,
   `session_kind`, `app_client_external_key`, `app_client_provider` or
   `namespace_sharing_mode` stay separate entries with their own counts instead
   of being merged and summed.
+- The **read** filter is deliberately narrower than the grouping, so a count is a
+  per-group figure and a recall through that envelope may return more rows than
+  the count. `_resolved_scope_to_query_filter` drops a key whose value is unset,
+  and `namespace_sharing_mode` is never a read predicate — both are the read
+  visibility rules (`private` visibility isolates by app client but not by
+  provider), not an oversight in the envelope. Concretely: an envelope with
+  `app_client.provider: null` in a project that also has `prov-a` and `prov-b`
+  rows recalls all three, while its own entry counts only the `null` group.
+  Passing `provider` as a real string narrows the recall to that group.
 - Counts cover **live rows only**: `forget()` tombstones are excluded from
   `episodes` and `records`. `knowledge_topics` has no `deleted` column, so
   topic rows are counted as stored; there is no tombstone counter for it.
@@ -552,9 +565,25 @@ Take any `scopes[i].scope` and reuse it as the `scope` argument above; if
 
 MCP, REST, the Python SDK and the OpenAI-compatible schemas all route through
 the same dispatch (`tool_dispatch.py`) and canonical query layer — tool names,
-parameters and payload shapes match across surfaces. The only surface-specific
+parameter names and payload shapes match across surfaces. The only surface-specific
 parts are transport encoding and the MCP-only bits documented here
 (`outputSchema` publication, `isError` mapping, stdio lifecycle).
+
+Argument **names** are the shared contract; types and bounds are not uniform,
+because each surface validates what its own transport can:
+
+- MCP validates against the model derived from the handler signature and then
+  **clamps**: `n_results: 0` becomes `1`, and `"5"` is coerced to `5`.
+- Dispatch and REST reject the same values: `n_results: 0` returns
+  `{"error": "n_results must be between 1 and 50"}` on dispatch and HTTP 422 on
+  REST.
+- `maxLength` and `enum` constraints in a published `inputSchema` are advisory on
+  MCP, which does not read them from the schema; dispatch enforces the same
+  bounds in its validators.
+
+So a host that relays caller intent should not assume an out-of-range value is
+refused everywhere. The startup self-check below compares the **argument-name**
+set only.
 
 ### One input contract, four enforcement points
 

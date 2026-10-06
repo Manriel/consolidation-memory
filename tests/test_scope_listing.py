@@ -73,6 +73,41 @@ def test_listed_scope_is_reusable_as_scope_argument() -> None:
     assert after["total"] == 3
 
 
+def test_listed_envelope_validates_against_the_published_scope_schema() -> None:
+    """A discovered envelope must satisfy the schema the tools publish.
+
+    The guide promises an entry can be passed back verbatim. Discovery emits
+    ``null`` for every identity key the rows do not carry, so the published
+    scope schema has to accept that: it previously declared strings only, and a
+    host validating arguments against it (OpenAI strict mode) rejected the
+    envelope that MCP and REST both accept.
+    """
+    import jsonschema
+
+    from consolidation_memory.schemas import SCOPE_INPUT_SCHEMA
+
+    _seed_scopes()
+    listed = _list_scopes(limit=10).structured_content["scopes"][0]["scope"]
+
+    jsonschema.validate(instance=listed, schema=SCOPE_INPUT_SCHEMA)
+
+
+def test_a_null_identity_key_is_rejected_still() -> None:
+    """Nullable is not permissive: an unknown key and a bad type still fail."""
+    import jsonschema
+    from jsonschema.exceptions import ValidationError
+
+    from consolidation_memory.schemas import SCOPE_INPUT_SCHEMA
+
+    for envelope in (
+        {"namespace": {"nope": "x"}},
+        {"app_client": {"provider": 7}},
+        {"namespace": {"sharing_mode": "public"}},
+    ):
+        with pytest.raises(ValidationError):
+            jsonschema.validate(instance=envelope, schema=SCOPE_INPUT_SCHEMA)
+
+
 def test_pages_iterate_without_overlap_or_gaps() -> None:
     _seed_scopes()
     full = _list_scopes(limit=10).structured_content
