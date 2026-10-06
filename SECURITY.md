@@ -86,7 +86,7 @@ reads/writes the same on-disk project data as MCP.
 
 ## Policy Coverage (`write_mode`)
 
-`write_mode='deny'` is enforced in [`client.py`](src/consolidation_memory/client.py) by `_write_denied_message`, at six points covering the seven write tools below — `memory_remember` re-translates onto the store path, and the batch path denies per item. A denial is a business outcome, not a transport error: the call succeeds and the payload carries `status: "write_denied"`.
+`write_mode='deny'` is enforced in [`client.py`](src/consolidation_memory/client.py) by `_write_denied_message`, at six points covering the seven write tools below — `memory_remember` re-translates onto the store path, and `memory_store_batch` is denied as a whole before any episode is written. A denial is a business outcome, not a transport error: the call succeeds and the payload carries `status: "write_denied"`.
 
 Gated: `memory_store`, `memory_remember`, `memory_store_batch`, `memory_outcome_record`, `memory_forget`, `memory_correct`, `memory_protect`.
 

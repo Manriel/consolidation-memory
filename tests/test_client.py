@@ -271,6 +271,46 @@ class TestClientScopeModel:
         finally:
             client.close()
 
+    def test_store_batch_denial_is_one_result_not_one_per_episode(self):
+        """A denied batch is refused whole, before any episode is validated.
+
+        `docs/ACL.md` used to promise the denial was reported per episode inside
+        `results`. It is not: the check runs ahead of the loop, so a batch of
+        three comes back with a single synthetic entry and nothing written.
+        """
+        from consolidation_memory.client import MemoryClient
+        from consolidation_memory.database import ensure_schema
+
+        ensure_schema()
+        client = MemoryClient(auto_consolidate=False)
+        try:
+            with patch("consolidation_memory.backends.encode_documents") as mock_embed:
+                result = client.store_batch_with_scope(
+                    episodes=[
+                        {"content": "first blocked"},
+                        {"content": "second blocked"},
+                        {"content": "third blocked"},
+                    ],
+                    scope={
+                        "namespace": {"slug": "team-a"},
+                        "project": {"slug": "repo-a"},
+                        "policy": {"write_mode": "deny"},
+                    },
+                )
+
+            assert result.status == "write_denied"
+            assert result.stored == 0
+            assert result.duplicates == 0
+            assert len(result.results) == 1, (
+                "one synthetic denial entry, not one per episode: "
+                f"{result.results}"
+            )
+            assert result.results[0]["status"] == "write_denied"
+            assert result.results[0]["message"]
+            mock_embed.assert_not_called()
+        finally:
+            client.close()
+
     def test_read_visibility_namespace_widens_scope_filter(self):
         from consolidation_memory.client import MemoryClient, _resolved_scope_to_query_filter
         from consolidation_memory.database import ensure_schema

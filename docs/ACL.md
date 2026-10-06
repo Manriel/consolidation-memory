@@ -45,7 +45,10 @@ carries
 ```
 
 so agents branch on `status` and pipelines do not treat it as an outage.
-Batch stores report the denial per episode inside `results`.
+A batch store is denied **as a whole**, before any episode is validated or
+written: `memory_store_batch` returns one `results` entry describing the denial,
+with `stored` and `duplicates` at `0`. There is no per-episode outcome row for a
+denied batch.
 
 Not gated by `write_mode`: policy administration itself, scope discovery,
 maintenance operations (`memory_hygiene_*`, `memory_compact`, `memory_export`,
