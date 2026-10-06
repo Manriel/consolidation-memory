@@ -99,7 +99,7 @@ Prefer the canonical snippet from `consolidation-memory init` / `setup_service.r
 - **`CONSOLIDATION_MEMORY_MCP_AUTO_CONSOLIDATE=0`**: do not consolidate on the interactive path.
 - **`CONSOLIDATION_MEMORY_PRELOAD_SCIPY_ON_START=1`**: load SciPy on the MCP main thread so consolidate does not hang on Windows worker-thread native imports.
 - **`CONSOLIDATION_MEMORY_DEFERRED_KNOWLEDGE_RETRY_SECONDS`**: seconds to poll for a warm record-embedding cache after a deferred-knowledge recall. Default in library is `3`; **recommended MCP env is `0`** so the first `memory_recall` returns episodes immediately with a warning — call again shortly for full knowledge.
-- **Tool budgets**: `CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS` (default 60), plus per-tool `CONSOLIDATION_MEMORY_TIMEOUT_<TOOL>` (e.g. `MEMORY_STATUS`, `MEMORY_CONSOLIDATE`). Recall uses `CONSOLIDATION_MEMORY_RECALL_TIMEOUT_SECONDS`.
+- **Tool budgets**: `CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS` (default 60), plus per-tool `CONSOLIDATION_MEMORY_TIMEOUT_<TOOL>` (e.g. `MEMORY_STATUS`, `MEMORY_CONSOLIDATE`). Recall uses `CONSOLIDATION_MEMORY_RECALL_TIMEOUT_SECONDS` — including `memory_ask`, which fixes that budget and ignores the per-tool override.
 
 Agent gate smoke (stdio initialize → status → recall under budgets). This is a
 **CI gate**, not just a convenience — `test.yml` runs it on 3.13/ubuntu:

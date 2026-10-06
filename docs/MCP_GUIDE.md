@@ -387,13 +387,21 @@ Per tool: `CONSOLIDATION_MEMORY_TIMEOUT_<TOOL>` → per-tool default →
 | --- | --- | --- | --- |
 | `memory_store`, `memory_remember`, `memory_search` | 30s | `memory_claim_browse`, `memory_outcome_record`, `memory_outcome_browse`, `memory_status` | 30s |
 | `memory_forget`, `memory_protect`, `memory_read_topic` | 30s | `memory_contradictions`, `memory_consolidation_log` | 30s |
-| `memory_claim_search`, `memory_decay_report`, `memory_timeline`, `memory_browse` | 45s | `memory_ask`, `memory_store_batch`, `memory_correct` | 60s |
+| `memory_claim_search`, `memory_decay_report`, `memory_timeline`, `memory_browse` | 45s | `memory_store_batch`, `memory_correct` | 60s |
+| `memory_ask` | see below | | |
 | `memory_hygiene_scan` | 60s | `memory_hygiene_apply`, `memory_export` | 180s |
 | `memory_compact` | 120s | `memory_consolidate` | 600s |
 | `memory_policy_list`, `memory_policy_grant` | 20s | `memory_recall`, `memory_detect_drift` | see below |
 
 `memory_scope_list` is the one tool with no per-tool default: it runs on the
 generic `CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS` fallback (60s).
+
+`memory_ask` is the exception to the whole per-tool scheme: it fixes its budget
+to `CONSOLIDATION_MEMORY_RECALL_TIMEOUT_SECONDS` before dispatch, so
+`CONSOLIDATION_MEMORY_TIMEOUT_MEMORY_ASK` and
+`CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS` do not affect it. Raise the recall
+variable. A timeout message says which budget applied instead of naming a
+variable the call ignores.
 
 Dedicated budgets (own environment variables):
 
@@ -487,10 +495,10 @@ variable without that prefix.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `TOOL_TIMEOUT_SECONDS` | 60 | Fallback budget for tools without a dedicated default |
-| `TIMEOUT_<TOOL>` | per-tool | Per-tool override, e.g. `TIMEOUT_MEMORY_STATUS` |
-| `RECALL_TIMEOUT_SECONDS` | 60 | Semantic recall phase |
+| `TIMEOUT_<TOOL>` | per-tool | Per-tool override, e.g. `TIMEOUT_MEMORY_STATUS`; ignored by `memory_ask`, which uses `RECALL_TIMEOUT_SECONDS` |
+| `RECALL_TIMEOUT_SECONDS` | 60 | Semantic recall phase, and the whole `memory_ask` budget |
 | `RECALL_FALLBACK_TIMEOUT_SECONDS` | 10 | Keyword fallback phase |
-| `RECALL_DEADLINE_MARGIN_RATIO` | 0.85 | Share of the budget reserved before fallback |
+| `RECALL_DEADLINE_MARGIN_RATIO` | 0.85 | Fraction of the timeout the internal recall deadline spans; the remaining 0.15 is the headroom before the caller-side timeout fires |
 | `DRIFT_TIMEOUT_SECONDS` | 90 | Drift scan budget |
 | `CLIENT_INIT_TIMEOUT_SECONDS` | 30 | Client/engine startup budget |
 | `DEFERRED_KNOWLEDGE_RETRY_SECONDS` | 3 | Wait before knowledge is guaranteed fresh in recall |
