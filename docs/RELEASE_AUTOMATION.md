@@ -149,8 +149,35 @@ older `feat:` — the "no user-visible change was lost" line is replaced by
 releasing.` and the lost subjects are listed with them.
 
 **Before releasing** with a warning in the log, re-run with the suggested
-`--limit` value (or edit the `## Unreleased` section by hand) so no change ships
-undocumented.
+`--limit` value so no change ships undocumented. Raising the limit is the only
+lever: `## Unreleased` is rewritten from commit headers on every push to `main`,
+so text added there by hand does not survive. Notes an upgrading caller needs
+belong in the commit body and the PR description.
+
+## Versioning
+
+The project stays on `0.x`. `0.x` is a public beta: the tool contract may break,
+all surfaces are re-published together in one release, and no `1.x` line is
+planned.
+
+That decides what a contributor writes in a commit subject. Conventional Commits
+reserves `!` and a `BREAKING CHANGE` body for a major bump, and
+`scripts/release_criteria.py` below implements that literally — so either marker
+anywhere in the release range produces `1.0.0` off a `0.x` version. **Neither
+marker is used in this repository**, including for real contract breaks: an
+ordinary `feat:` or `fix:` subject ships the break under a minor bump, which is
+what [SECURITY.md](../SECURITY.md) describes for the supported line.
+
+The guard is human. No workflow validates commit subjects, and `workflow_dispatch`
+lets an operator force any bump; what actually prevents an outside contributor's
+honest `!` from releasing `1.0.0` is review on the PR. A stray `!` that reaches
+`main` is corrected with [Manual Override](#manual-override).
+
+`CHANGELOG.md` carries no `### Breaking Changes` section. `## Unreleased` is
+regenerated from commit headers by `update_changelog.py` on every push to `main`,
+so hand-written prose inside it does not survive — see
+[the changelog flow](#workflow). Upgrade-critical notes belong in the commit body
+and the PR description.
 
 ## Criteria
 

@@ -9,8 +9,12 @@
 | `<0.20.0` | No |
 
 `0.21.x` is the line that carries the current tool contract. A breaking change
-ships as a minor under the 0.x policy, so each release takes the "Yes" row and the
-line beneath it drops to best-effort.
+ships as a minor under the 0.x policy — the project stays on `0.x`, the contract
+may break, and no `1.x` line is planned — so each release takes the "Yes" row and
+the line beneath it drops to best-effort. The policy is stated in full, including
+why commit subjects carry neither `!` nor `BREAKING CHANGE`, in
+[CONTRIBUTING.md](CONTRIBUTING.md#versioning) and
+[docs/RELEASE_AUTOMATION.md](docs/RELEASE_AUTOMATION.md#versioning).
 
 ## Trust Boundaries
 

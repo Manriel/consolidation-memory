@@ -175,6 +175,30 @@ python -m pytest -q tests/test_fast_path_consolidation.py tests/test_claim_emiss
 
 Use clear, imperative commit messages. Prefer small, reviewable commits.
 
+## Versioning
+
+The project stays on `0.x` for the foreseeable future. `0.x` is a public beta:
+breaking the tool contract is allowed, and the `mcp`, REST and OpenAI surfaces
+are re-published together in the same release. A `1.x` line is not planned.
+
+That has one concrete consequence for commit subjects. Conventional Commits
+reserves `!` and a `BREAKING CHANGE` body for a major bump, and
+`scripts/release_criteria.py` implements that rule literally, so either marker in
+a commit in the release range turns the next release into `1.0.0`. **Do not use
+`!` or `BREAKING CHANGE` here**, even for a genuine contract break. Write an
+ordinary `feat:` or `fix:` subject and let the minor bump carry it, as
+[SECURITY.md](SECURITY.md) describes for the supported line.
+
+Nothing enforces that automatically. Merge to `main` goes through review, and the
+reviewer is what stops an outside contributor who marked a break by the
+conventional-commits rules. If a stray `!` reaches `main`, override the bump with
+`workflow_dispatch` ([Manual Override](docs/RELEASE_AUTOMATION.md#manual-override)).
+
+`CHANGELOG.md` has no `### Breaking Changes` section. The `## Unreleased`
+section is regenerated from commit headers on every push to `main`, so hand-written
+prose inside it is discarded. Upgrade-critical notes go in the commit body and, for
+a release, in the PR description.
+
 ## Reporting bugs and features
 
 - [GitHub Issues](https://github.com/charliee1w/consolidation-memory/issues)
