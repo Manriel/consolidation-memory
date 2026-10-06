@@ -30,10 +30,17 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-from typing_extensions import Self
+
+if TYPE_CHECKING:
+    # typing.Self is 3.11+ and this project supports 3.10, so the annotation in
+    # __enter__ needs typing_extensions. It is an undeclared dependency: it
+    # resolved only as a transitive of mcp -> pydantic. `from __future__ import
+    # annotations` means it is never evaluated at runtime, so the import stays in
+    # the type-checking block.
+    from typing_extensions import Self
 
 from consolidation_memory import __version__
 from consolidation_memory.client_runtime import (

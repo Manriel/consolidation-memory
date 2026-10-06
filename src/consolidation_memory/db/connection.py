@@ -22,7 +22,8 @@ def _ensure_parent(path: Path) -> None:
 
 def _close_and_untrack_connection(conn: sqlite3.Connection) -> None:
     """Close a cached connection and remove it from global tracking."""
-    # sqlite3 close only fails on sqlite-level errors; never mask them.
+    # conn.close() raises only sqlite3.Error, so suppressing exactly that keeps a
+    # failed close from skipping the untrack below while masking nothing broader.
     with suppress(sqlite3.Error):
         conn.close()
     # The connection may already be untracked by a concurrent reset.
@@ -83,8 +84,9 @@ def close_all_connections() -> None:
     """Close all thread-local connections. Call during shutdown or test teardown."""
     with _conn_list_lock:
         for conn in _all_connections:
-            # sqlite3 close only fails on sqlite-level errors (e.g. unfinalized
-            # statements); dropping the reference must not mask those.
+            # conn.close() raises only sqlite3.Error (e.g. unfinalized statements).
+            # Suppressing exactly that lets the remaining connections still be
+            # closed and the tracking list still cleared; masks nothing broader.
             with suppress(sqlite3.Error):
                 conn.close()
         _all_connections.clear()
