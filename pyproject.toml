@@ -55,10 +55,13 @@ all = ["consolidation-memory[fastembed,openai,rest,dashboard,desktop,benchmark]"
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=6.0.0",
-    # Upper bound is deliberate: the enforced rule set below is written against
-    # ruff 0.16.10. A new minor may add, rename or reclassify rules, which would
-    # silently change what `ruff check` means here without any edit to this file.
-    "ruff>=0.7.0,<0.17",
+    # Lower bound is not arbitrary: the enforced `select` below names rules that
+    # only exist from 0.16.0 (RUF068 among them), and an older ruff aborts on an
+    # unknown selector rather than skipping it. Upper bound is deliberate too: the
+    # rule set is written against ruff 0.16.10, and a new minor may add, rename or
+    # reclassify rules, which would silently change what `ruff check` means here
+    # without any edit to this file.
+    "ruff>=0.16.10,<0.17",
     "mypy>=1.0.0",
     "bandit>=1.7.0",
     "build>=1.2.0",

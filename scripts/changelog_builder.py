@@ -12,12 +12,12 @@ from typing import IO
 
 # Maximum number of changelog bullets kept per release.
 #
-# The cap must not bite on a realistic release range. The largest range between
-# consecutive tags in this repository's history is 24 commits
-# (v0.19.0 -> v0.20.0), releases run every few days, and 200 bullets is only a few
-# kilobytes of Markdown, so 200 leaves roughly 8x headroom over the largest
-# observed range. Its job is to bound a pathological squash/merge (a
-# thousand-commit vendored import), not to filter normal work.
+# The cap must not bite on a realistic release range. Releases run every few days
+# and 200 bullets is only a few kilobytes of Markdown, so the cap leaves orders of
+# magnitude of headroom over any realistic range. Its job is to bound a
+# pathological squash/merge (a thousand-commit vendored import), not to filter
+# normal work. Recompute the widest observed range with
+# `git rev-list --count <previous-tag>..<tag>` across `git tag | sort -V`.
 DEFAULT_SUBJECT_LIMIT = 200
 
 # Commits that only matter to maintainers. They are the first entries dropped when

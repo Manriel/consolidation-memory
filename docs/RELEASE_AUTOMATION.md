@@ -80,11 +80,11 @@ python scripts/update_changelog.py --limit 400
 python scripts/release.py --bump minor --limit 400
 ```
 
-200 is a runaway guard, not a routine filter. The largest tag-to-tag range in this
-repository's history is 24 commits (`v0.19.0..v0.20.0`), and 200 bullets is a few
-kilobytes of Markdown — about 8x headroom (200 ÷ 24 ≈ 8.3). Recompute the range
-with `git rev-list --count <previous-tag>..<tag>` across `git tag | sort -V`; if
-it approaches the default, raise `DEFAULT_SUBJECT_LIMIT` in
+200 is a runaway guard, not a routine filter. Releases run every few days and 200
+bullets is only a few kilobytes of Markdown, so the cap has orders of magnitude of
+headroom over any realistic release range. Recompute the widest range with
+`git rev-list --count <previous-tag>..<tag>` across `git tag | sort -V`; if it
+approaches the default, raise `DEFAULT_SUBJECT_LIMIT` in
 `scripts/changelog_builder.py`.
 
 ### What is dropped first
@@ -121,8 +121,8 @@ print the same report to **stderr** through `emit_selection_report`, which also
 adds a `::warning::` annotation when running under GitHub Actions. Nothing is
 written into `CHANGELOG.md`.
 
-Verbatim report from `v0.19.0..v0.20.0` (24 commits, 11 releasable) selected with
-`--limit 10`, so 10 kept + 1 dropped = 11:
+Verbatim report from an illustrative release range of 24 commits, 11 of them
+releasable, selected with `--limit 10`, so 10 kept + 1 dropped = 11:
 
 ```text
 [changelog] NOTE: kept 10 of 11 releasable commits; skipped 13 merge/release/skip-marked commit(s) and 0 duplicate subject(s).
@@ -270,7 +270,7 @@ Symptoms:
 
 Fix:
 
-- Update `docs/RELEASE_AUTOMATION.md` or `README.md` in the **same commit** whenever you change release automation scripts or workflows (`release-on-main.yml`, `changelog-on-main.yml`, `update_changelog.py`, `changelog_builder.py`, `release_criteria.py`, `generate_tool_reference.py`). The guard also requires the file `(docs/RELEASE_AUTOMATION.md)` link in `README.md` and a set of required markers in this document.
+- Update `docs/RELEASE_AUTOMATION.md` or `README.md` in the **same commit** whenever you change release automation scripts or workflows (`release-on-main.yml`, `changelog-on-main.yml`, `update_changelog.py`, `release.py`, `changelog_builder.py`, `release_criteria.py`, `generate_tool_reference.py`). The guard also requires the file `(docs/RELEASE_AUTOMATION.md)` link in `README.md` and a set of required markers in this document.
 
 ### Changelog truncated warning in the log
 
@@ -321,7 +321,7 @@ only. Requires `RELEASE_AUTOMATION_PAT`; without it the run lands in
   checks and prints the changelog selection report but writes nothing and runs no
   gates; `--no-push` commits and tags, then prints the push command to run by
   hand.
-- `ruff` is pinned to `>=0.7.0,<0.17` with an explicit rule set in
+- `ruff` is pinned to `>=0.16.10,<0.17` with an explicit rule set in
   `pyproject.toml`. `Tests` and `Publish to PyPI` both lint `src/` and `tests/`.
   `scripts/` is linted by `scripts/pre_push_check.py` (and locally), so the
   release tooling ships clean without being a CI gate.

@@ -97,8 +97,11 @@ smoke, lint, type and security steps are 3.13/ubuntu while the matrix spans 3.10
   no `per-file-ignores`. Every suppression is a `# noqa` on the line it applies to,
   carrying its reason. Bandit is the security gate:
   `bandit -q -ll -r src scripts -s B608,B110`.
-- `ruff>=0.7.0,<0.17` carries an upper bound on purpose — the rule set is explicit,
-  but a bump can still add, rename or reclassify rules.
+- `ruff>=0.16.10,<0.17` — the floor is the enforced `select` itself: it names rules
+  that do not exist in older ruff (RUF068 is one), and ruff aborts on an unknown
+  selector rather than skipping it, so a lower bound produced a config that could
+  not be read. The upper bound is deliberate too: the rule set is explicit, but a
+  bump can still add, rename or reclassify rules.
 - BLE001 is **not** selected: `except Exception` in `tests/` is deliberate and not a
   lint failure. Do not claim BLE001 is enforced. TRY004 **is** enforced per site, not
   project-wide; REST maps `(TypeError, ValueError)` to 422, and the 400 handlers catch
