@@ -41,4 +41,5 @@ Notes:
   it builds a throwaway data dir and git repo of its own.
 - The plugin example is easiest to use from the repository root so Python can
   import `examples.plugins.*` directly.
-- `rest-api/client.py` imports `httpx`, which no project extra provides.
+- `rest-api/client.py` imports `httpx`, which is a core dependency, so any
+  install of the project already provides it.

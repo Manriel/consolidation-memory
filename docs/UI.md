@@ -65,9 +65,12 @@ When the config file is missing, the page opens an in-browser wizard:
 The rest of the page is backed by small `/ui/api/*` routes. `ask`, `remember`,
 `consolidate` and episode deletion go through the shared dispatch, so the UI
 never has its own write path; `hygiene/*` calls the same `corpus_hygiene`
-implementations the two hygiene tools call; `overview`, `recent` and `metrics`
-are read helpers over `DashboardData`; and `warmup`, `reindex` and
-`daemon-install` reuse the same helpers as the matching `/ops/*` routes.
+implementations the two hygiene tools call; `overview` and `recent` are read
+helpers over `DashboardData`, while `metrics` serves the `real_world_eval` report
+through `ui_ops.load_metrics_for_ui()` — the bundled
+`web/published_metrics.json` when no live report is present, so it is not a
+database read; and `warmup`, `reindex` and `daemon-install` reuse the same
+helpers as the matching `/ops/*` routes.
 
 ### Security
 

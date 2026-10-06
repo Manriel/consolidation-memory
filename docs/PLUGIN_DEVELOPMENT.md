@@ -19,7 +19,7 @@ logged, so one failing plugin never blocks the host and never crashes recall.
 | `on_recall` | `query, result` | After recall completes; `result` is a `types.RecallResult` |
 | `on_forget` | `episode_id` | After an episode is forgotten |
 | `on_consolidation_start` | `run_id, episode_count` | Before a consolidation run |
-| `on_consolidation_complete` | `report` | After a run finishes (success or partial) |
+| `on_consolidation_complete` | `report` | Once per run, on every terminal outcome: the full report, the early exits (`nothing_to_consolidate`, `too_few_episodes`, `error` when there are no vectors or no valid episodes), and an `error` report from the run's exception handler |
 | `on_topic_created` | `filename, title, record_count` | New knowledge topic written |
 | `on_topic_updated` | `filename, title, record_count` | Existing topic merged/updated |
 | `on_contradiction` | `topic_filename, old_content, new_content` | Contradiction detected during merge |

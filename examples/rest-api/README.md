@@ -9,13 +9,15 @@ pip install -e ".[fastembed,rest]"
 consolidation-memory serve --rest --host 127.0.0.1 --port 8080
 ```
 
-Install the client dependency and run the example. `httpx` is what
-`client.py` imports, and it is not part of any project extra:
+Run the example. `client.py` imports `httpx`, which is a core dependency of the
+project, so the `.[rest]` install above already provides it:
 
 ```bash
-pip install httpx
 python examples/rest-api/client.py
 ```
+
+(Install `httpx` by hand only if you run the script outside a project
+environment.)
 
 The script calls `GET /health`, `POST /memory/store`, `POST /memory/recall` and
 `GET /memory/status`.
