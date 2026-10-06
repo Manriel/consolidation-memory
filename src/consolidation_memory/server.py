@@ -1266,9 +1266,9 @@ async def memory_remember(
         Field(description="Optional scope input. Use a canonical scope object, or pass a string shorthand that auto-maps to project scope (path-like values -> project.root_uri, otherwise -> project.slug)."),
     ] = None,
 ) -> StoreOutput:
-    """Save something to memory using plain language. Prefer this over memory_store when you do not
-   need advanced content_type control. Use kind=fix for debugging solutions (problem + what
-   worked)."""
+    """Save something to memory using plain language. Prefer this over memory_store when the simple
+   kind vocabulary is enough; memory_store is the one that takes an explicit content_type. Use
+   kind=fix for debugging solutions (problem + what worked)."""
     return await _call_tool_result(
         "memory_remember",
         {

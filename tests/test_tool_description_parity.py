@@ -121,25 +121,68 @@ def test_verifier_rejects_a_published_tool_with_no_handler(
     assert "no handler is" in str(excinfo.value)
 
 
-def test_published_descriptions_name_their_own_contract_surface() -> None:
-    """Descriptions must not contradict the shared strictness contract.
+def _published_output_property_names() -> dict[str, set[str]]:
+    """Output-contract property names per tool, including nested `$defs` models."""
+    import asyncio
 
-    Every tool rejects unknown arguments, on every surface. A description that
-    invites an agent to pass an undeclared key is a description that will
-    generate a rejected call, so the guarantee is checked rather than assumed.
+    from consolidation_memory import server
+
+    def _collect(node: object, found: set[str]) -> None:
+        if isinstance(node, dict):
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                found.update(str(key) for key in properties)
+            for value in node.values():
+                _collect(value, found)
+        elif isinstance(node, list):
+            for item in node:
+                _collect(item, found)
+
+    per_tool: dict[str, set[str]] = {}
+    for tool in asyncio.run(server.mcp.list_tools()):
+        found: set[str] = set()
+        _collect(tool.output_schema or {}, found)
+        per_tool[str(tool.name)] = found
+    return per_tool
+
+
+def test_published_descriptions_only_name_keys_the_contract_declares() -> None:
+    """A description must not send a caller to a key that does not exist.
+
+    The description is the only thing an agent reads to decide how to call a
+    tool. A snake_case token in prose reads as a parameter or output field; if the
+    published schema declares no such key, the call is rejected on every surface
+    (`additionalProperties: false`) or the field is simply absent from the
+    result. This caught `memory_remember` advertising `content_type`, which it
+    does not publish - a key its own description told agents to prefer the other
+    tool for.
+
+    Tool names are legitimate prose references, so are domain field names another
+    tool in the same surface does declare: the two discovery tools say "not
+    filtered by read_visibility", naming the ACL field memory_policy_grant accepts,
+    not an argument of their own.
     """
-    openai = _openai_descriptions()
-    assert "additionalProperties" in str(schemas.openai_tools[0]["function"]["parameters"])
-    assert all(_normalize(text) for text in openai.values())
+    tool_names = {str(tool["function"]["name"]) for tool in schemas.openai_tools}
+    surface_arguments = {
+        str(key)
+        for tool in schemas.openai_tools
+        for key in (tool["function"]["parameters"].get("properties") or {})
+    }
+    output_names = _published_output_property_names()
 
-    # No description may claim a parameter the published schema omits.
+    offenders: list[str] = []
     for tool in schemas.openai_tools:
         name = str(tool["function"]["name"])
-        published = str(tool["function"]["parameters"])
-        description = _normalize(str(tool["function"]["description"]))
-        for claim in re.findall(r"`([a-z_]+)`", description):
-            if claim in {"inputSchema", "outputSchema", "structuredContent"}:
+        published = {
+            str(key)
+            for key in (tool["function"]["parameters"].get("properties") or {})
+        }
+        published |= output_names.get(name, set())
+        published |= surface_arguments
+        description = str(tool["function"]["description"])
+        for claim in re.findall(r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b", description):
+            if claim in tool_names or claim in published:
                 continue
-            assert claim in published, (
-                f"{name} mentions {claim!r} but does not publish it"
-            )
+            offenders.append(f"{name} mentions {claim!r}, which it does not declare")
+
+    assert not offenders, "; ".join(offenders)

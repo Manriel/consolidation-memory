@@ -185,7 +185,8 @@ MEMORY_REMEMBER_SCHEMA: dict[str, Any] = {
         "name": "memory_remember",
         "description": (
             "Save something to memory using plain language. "
-            "Prefer this over memory_store when you do not need advanced content_type control. "
+            "Prefer this over memory_store when the simple kind vocabulary is enough; "
+            "memory_store is the one that takes an explicit content_type. "
             "Use kind=fix for debugging solutions (problem + what worked)."
         ),
         "parameters": {

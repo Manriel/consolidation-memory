@@ -109,7 +109,7 @@ Retrieve relevant memories by semantic similarity. Returns episodes, knowledge d
 
 ## memory_remember
 
-Save something to memory using plain language. Prefer this over memory_store when you do not need advanced content_type control. Use kind=fix for debugging solutions (problem + what worked).
+Save something to memory using plain language. Prefer this over memory_store when the simple kind vocabulary is enough; memory_store is the one that takes an explicit content_type. Use kind=fix for debugging solutions (problem + what worked).
 
 ### Input
 
