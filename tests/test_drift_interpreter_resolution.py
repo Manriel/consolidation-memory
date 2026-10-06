@@ -14,6 +14,7 @@ run the actual child command inside it, rather than mocking the subprocess.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib.util
 import json
 import os
@@ -294,6 +295,49 @@ def test_run_detect_drift_subprocess_completes_with_child_environment(
         "impacts",
     }
     assert json.dumps(result)
+
+
+def test_analysed_repository_cannot_shadow_the_worker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A module in the analysed repo must not be imported by the worker.
+
+    ``python -m`` puts the working directory at ``sys.path[0]``, ahead of
+    ``PYTHONPATH`` and the stdlib. With the worker started inside the analysed
+    repository, a ``consolidation_memory/`` package there took precedence and its
+    code ran in place of the real one. The marker file records whether any
+    shadowing module was imported.
+    """
+    repo = tmp_path / "analysed"
+    shadow = repo / "consolidation_memory"
+    shadow.mkdir(parents=True)
+    marker = tmp_path / "shadow-marker.txt"
+    (shadow / "__init__.py").write_text(
+        "from pathlib import Path\n"
+        "Path(__import__('os').environ['CM_SHADOW_MARKER']).write_text('executed')\n",
+        encoding="utf-8",
+    )
+    (repo / "json.py").write_text("raise RuntimeError('shadowed stdlib json')\n", encoding="utf-8")
+
+    monkeypatch.setenv("CM_SHADOW_MARKER", str(marker))
+    monkeypatch.setenv("CONSOLIDATION_MEMORY_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("CONSOLIDATION_MEMORY_PROJECT", "default")
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+
+    # The real end-to-end path: whatever cwd it picks, the worker must import the
+    # real package rather than the one sitting in the analysed repository.
+    # A repository without commits makes the worker fail; the import chain is what
+    # this test is about, and it has already run by then.
+    with contextlib.suppress(RuntimeError):
+        asyncio.run(
+            drift_subprocess.run_detect_drift_subprocess(
+                base_ref=None,
+                repo_path=str(repo),
+                timeout_seconds=180.0,
+            )
+        )
+
+    assert not marker.exists(), "the analysed repository shadowed the real package"
 
 
 def _load_init_module(name: str) -> ModuleType:

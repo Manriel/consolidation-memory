@@ -32,6 +32,17 @@ Treat MCP as a **local trust boundary** (IDE, agent host, same user session). Do
 expose the MCP subprocess to untrusted multi-tenant environments without OS-level
 isolation.
 
+### The repository being analysed
+
+`memory_detect_drift` takes a repository path and scans it in a subprocess. The
+repository is **input, not a trusted peer**: the worker reads it through `git` and
+the memory database, never executes its files, and its own working directory is
+never the analysed path — a repository containing `consolidation_memory/` or a
+`json.py` cannot shadow the running package. What the repository still controls
+is its own git metadata, so a `.git/config` there can affect the git invocation
+the worker makes. Do not point drift detection at a repository you would not read
+by hand.
+
 ### REST API
 
 Beyond loopback, every request needs the bearer token from

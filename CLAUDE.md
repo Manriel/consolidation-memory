@@ -156,7 +156,8 @@ refactors; strike items off as they close.
 - ~~`memory_scope_list` merge + liveness~~: grouping on the 11 canonical scope keys, `deleted = 0` live-row counts, display metadata via `MAX()`, no `namespace.display_name`, no `ensure_schema()` on the read path.
 - ~~Unknown-argument enforcement~~: one shared allowed-argument set feeds MCP, REST and dispatch, and startup fails if the SDK-enforced set diverges from it.
 - ~~`mcp` private surfaces~~: isolated in `mcp_compat.py`, with self-healing `outputSchema` publication and a startup self-check.
-- ~~Drift subprocess interpreter~~: not resolved through a venv symlink, with `PYTHONPATH` forwarded package root first.
+- ~~Drift subprocess interpreter~~: not resolved through a venv symlink, with `PYTHONPATH` forwarded package root first, and **no `cwd`**: `python -m` puts the working directory at `sys.path[0]` ahead of `PYTHONPATH` and the stdlib, so running inside the analysed repository let its modules shadow the real package. The repository travels as `--repo-path` and the worker resolves it, so the child needs no working directory. Regression: `tests/test_drift_interpreter_resolution.py::test_analysed_repository_cannot_shadow_the_worker`.
+- **P1 Analysed repository and `git` config are outside the documented boundary**: `memory_detect_drift` takes a caller-supplied `repo_path` and `drift.py` runs `git` with `cwd=repo_dir` and `-c safe.directory=…`. The repository's Python modules are no longer importable by the worker, but a `.git/config` in that repository can still influence the git invocation, and `SECURITY.md` does not say what the analysed repository is trusted to do. Decide the position, then write it down.
 - ~~Lint/typing config~~: explicit `select`, no `ignore`/`per-file-ignores`, `scripts/` clean rather than excluded, `mcp` typed rather than silenced.
 
 **Runtime residual (P0-1)**

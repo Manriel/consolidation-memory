@@ -119,13 +119,17 @@ async def run_detect_drift_subprocess(
     timeout_seconds: float,
 ) -> DriftOutput:
     cmd = _build_drift_command(base_ref=base_ref, repo_path=repo_path)
-    cwd = str(Path(repo_path).expanduser().resolve()) if repo_path else None
+    # No cwd: `python -m` puts the current directory at sys.path[0], ahead of
+    # PYTHONPATH and the stdlib, so running inside the analysed repository let a
+    # `consolidation_memory/` or `json.py` sitting in that repo shadow the real
+    # module - the worker would then execute the analysed repository's code. The
+    # repository is passed as `--repo-path` and resolved by the worker itself, so
+    # the child needs nothing from the working directory.
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        cwd=cwd,
         env=_build_child_env(),
     )
     try:
