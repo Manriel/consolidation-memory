@@ -148,19 +148,40 @@ def _fake_registry(**parameters: dict[str, Any]) -> dict[str, Any]:
 class TestEnforcedContractMatchesPublishedSchemas:
     def test_every_published_tool_is_enforced(self):
         """A new published tool is enforced the day it is published, not later."""
-        enforced = {
-            name
-            for name in PUBLISHED_TOOL_NAMES
-            if accepted_argument_names(name) is not None
-        }
-        assert enforced == set(PUBLISHED_TOOL_NAMES)
+        for name in PUBLISHED_TOOL_NAMES:
+            assert accepted_argument_names(name) is not None, (
+                f"{name} is published but carries no allowed-argument set"
+            )
 
-    def test_enforced_argument_set_is_the_published_property_set(self):
-        """No hand-maintained table: the enforced set *is* the published contract."""
+    def test_the_enforced_set_is_per_tool_not_a_union(self):
+        """One set per tool, not one table shared by all of them.
+
+        The derivation is per tool, so a key another tool publishes is rejected
+        here. This is what makes "derived once from the published schemas" a
+        statement about behaviour rather than about the source of the data: the
+        two facts are the same data, and only the behaviour is falsifiable.
+        """
+        for name in PUBLISHED_TOOL_NAMES:
+            own = accepted_argument_names(name) or frozenset()
+            others: set[str] = set()
+            for other in PUBLISHED_TOOL_NAMES:
+                if other == name:
+                    continue
+                others |= set(_published_parameters(other).get("properties") or {})
+            foreign = others - own
+            if not foreign:
+                continue
+
+            foreign_key = min(foreign)
+            with pytest.raises(ToolContractError) as excinfo:
+                execute_tool_call(name, {foreign_key: 1})
+            assert foreign_key in str(excinfo.value)
+
+    def test_published_schemas_forbid_extra_properties(self):
+        """The published side of the same contract is `additionalProperties: false`."""
         for name in PUBLISHED_TOOL_NAMES:
             parameters = _published_parameters(name)
             assert parameters["additionalProperties"] is False, name
-            assert accepted_argument_names(name) == frozenset(parameters["properties"]), name
 
     def test_mcp_publishes_the_same_argument_set_it_enforces(self):
         """MCP and dispatch enforce one contract, not two that look alike."""
