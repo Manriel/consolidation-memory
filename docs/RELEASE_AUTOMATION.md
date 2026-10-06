@@ -197,9 +197,18 @@ latest tag, newest first:
 ## Required Repository Secret
 
 `RELEASE_AUTOMATION_PAT` must be able to push commits and tags to this
-repository (`repo` scope for a classic PAT). Both `changelog-on-main.yml` and
-`release-on-main.yml` check out with it, and a PAT-authorized tag push is what
+repository (`repo` scope for a classic PAT). A PAT-authorized tag push is what
 triggers `publish.yml` reliably.
+
+`changelog-on-main.yml` does **not** check out with the PAT. It checks out with
+`persist-credentials: false`, so nothing in `.git/config` carries a push-capable
+credential, and passes the PAT only to the two `git push` steps, through
+`GIT_CONFIG_*` in that step's environment. That job installs the package and
+imports it, which executes code resolved from PyPI; a push-capable token sitting
+in `.git/config` for those steps is a much larger blast radius than the
+automation needs. `release-on-main.yml` does check out with the PAT, because
+`scripts/release.py` performs the tag push itself and needs the credential to
+survive into that subprocess.
 
 ## Troubleshooting
 
