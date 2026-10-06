@@ -2129,7 +2129,23 @@ def _verify_published_argument_contract() -> None:
 _publish_and_verify_output_schemas()
 _verify_published_argument_contract()
 _verify_tool_descriptions()
-mcp_compat.install_list_tools_heal(mcp, _publish_output_schemas)
+
+
+def _verify_every_contract() -> None:
+    """Repair and verify all three contracts on a tool listing.
+
+    The heal wrapper used to call ``_publish_output_schemas`` alone, so a tool
+    registered at runtime was repaired but never checked: its argument set and its
+    description were never compared against the published contract. Point the
+    wrapper at the same three checks the import-time path runs, so late
+    registration is as strictly served as import-time registration.
+    """
+    _publish_and_verify_output_schemas()
+    _verify_published_argument_contract()
+    _verify_tool_descriptions()
+
+
+mcp_compat.install_list_tools_heal(mcp, _verify_every_contract)
 
 
 def run_server() -> None:

@@ -24,7 +24,7 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
 
-from consolidation_memory import mcp_compat, server
+from consolidation_memory import mcp_compat, schemas, server, tool_dispatch
 
 # The documented full MCP profile. Kept explicit (not derived from the server)
 # so a tool silently dropped from the registry fails here.
@@ -61,6 +61,8 @@ EXPECTED_TOOL_NAMES = {
 }
 
 _LATE_TOOL_NAME = "memory_late_registered_probe"
+_LATE_DESCRIPTION = "A tool registered after the import-time publication ran."
+_UNPUBLISHED_TOOL_NAME = "memory_unpublished_probe"
 
 
 class _LateOutput(BaseModel):
@@ -72,16 +74,47 @@ def _published() -> dict[str, Any]:
 
 
 def _register_late_tool() -> None:
-    """Register a tool after startup, the way a plugin or dynamic tool would."""
+    """Register a tool after startup, the way a plugin or dynamic tool would.
 
-    @server.mcp.tool(name=_LATE_TOOL_NAME)
+    Also appended to ``schemas.openai_tools``: a tool registered on MCP but not
+    published to the OpenAI surface has no argument contract to enforce, and the
+    listing now verifies that, so the probe has to be a legitimate tool.
+    """
+    schemas.openai_tools.append(
+        {
+            "type": "function",
+            "function": {
+                "name": _LATE_TOOL_NAME,
+                "description": _LATE_DESCRIPTION,
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        }
+    )
+
+    @server.mcp.tool(name=_LATE_TOOL_NAME, description=_LATE_DESCRIPTION)
     async def _late() -> _LateOutput:
         """A tool registered after the one-shot import-time publication ran."""
         return _LateOutput(ok=True)
 
+    # The allowed-argument map is memoized over openai_tools; a tool published
+    # after the first call has to invalidate it or the argument check keeps
+    # seeing the set from import time.
+    tool_dispatch._published_argument_names.cache_clear()
+
 
 def _remove_late_tool() -> None:
     del mcp_compat.registered_tools(server.mcp)[_LATE_TOOL_NAME]
+    schemas.openai_tools[:] = [
+        tool
+        for tool in schemas.openai_tools
+        if str(tool["function"]["name"]) != _LATE_TOOL_NAME
+    ]
+    tool_dispatch._published_argument_names.cache_clear()
 
 
 def test_every_documented_tool_publishes_the_two_arm_output_schema() -> None:
@@ -164,6 +197,26 @@ def test_late_registered_tool_gets_its_output_schema_on_the_next_listing() -> No
         assert arms[1].get("title") == "ToolErrorPayload"
     finally:
         _remove_late_tool()
+
+
+def test_a_late_tool_that_breaks_the_contract_is_refused_on_listing() -> None:
+    """Self-healing must not become self-exempting.
+
+    The listing used to run publication only, so a tool registered at runtime
+    was repaired and then served unverified: no argument-set check, no
+    description check. Register one that has no entry in the OpenAI surface -
+    nothing enforces a contract for it - and the listing must fail instead.
+    """
+    @server.mcp.tool(name=_UNPUBLISHED_TOOL_NAME, description="Never published.")
+    async def _unpublished() -> _LateOutput:
+        """Registered on MCP but absent from schemas.openai_tools."""
+        return _LateOutput(ok=True)
+
+    try:
+        with pytest.raises(mcp_compat.MCPCompatError, match=_UNPUBLISHED_TOOL_NAME):
+            _published()
+    finally:
+        del mcp_compat.registered_tools(server.mcp)[_UNPUBLISHED_TOOL_NAME]
 
 
 def test_publication_is_idempotent_and_preserves_the_published_object() -> None:
