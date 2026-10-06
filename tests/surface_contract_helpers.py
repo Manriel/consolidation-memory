@@ -15,12 +15,21 @@ except ImportError:
     TestClient = None  # type: ignore[misc, assignment]
 
 
-def assert_recall_deadline_injected(arguments: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(arguments)
-    deadline = normalized.pop("_recall_deadline_monotonic", None)
+def assert_recall_deadline_injected(execute_mock: MagicMock) -> dict[str, Any]:
+    """The transport arguments, with the deadline proven to travel as a keyword.
+
+    The deadline is a keyword on ``execute_tool_call``, not a key in the
+    argument dict, so this asserts on both: the payload carries no internal key,
+    and the resolved budget arrived beside it.
+    """
+    arguments = dict(execute_mock.call_args.args[1])
+    assert not [key for key in arguments if str(key).startswith("_")], (
+        f"transport state leaked into the argument dict: {sorted(arguments)}"
+    )
+    deadline = execute_mock.call_args.kwargs.get("recall_deadline_monotonic")
     assert isinstance(deadline, float)
     assert deadline > 0
-    return normalized
+    return arguments
 
 
 def invoke_surfaces_with_execute_tool_call(
@@ -49,6 +58,7 @@ def invoke_surfaces_with_execute_tool_call(
         arguments: dict[str, Any],
         *,
         client: Any = None,
+        recall_deadline_monotonic: float | None = None,
     ) -> dict[str, Any]:
         recorded_tool_calls.append((name, dict(arguments)))
         if name == "memory_remember":
@@ -66,7 +76,12 @@ def invoke_surfaces_with_execute_tool_call(
             )
 
             recall_args = build_ask_recall_arguments(arguments)
-            raw = _chain_alias_tools("memory_recall", recall_args, client=client)
+            raw = _chain_alias_tools(
+                "memory_recall",
+                recall_args,
+                client=client,
+                recall_deadline_monotonic=recall_deadline_monotonic,
+            )
             simplified = simplify_recall_result(raw)
             simplified["query"] = recall_args["query"]
             return simplified

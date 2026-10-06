@@ -896,18 +896,35 @@ class TestDispatchArgumentContract:
 
         client.store_with_scope.assert_called_once()
 
-    def test_internal_recall_deadline_argument_is_not_a_contract_violation(self):
+    def test_recall_deadline_is_a_keyword_not_an_argument(self):
+        """Dispatch accepts a caller-set deadline without declaring it.
+
+        The deadline arrives as its own keyword, so it never appears in the
+        published argument set and no key has to be exempted from the contract.
+        """
         client = MagicMock()
         client.query_recall.return_value = RecallResult(episodes=[], knowledge=[])
 
         dispatch_tool_call(
             client,
             "memory_recall",
-            {"query": "test", "_recall_deadline_monotonic": 123.5},
+            {"query": "test"},
+            recall_deadline_monotonic=123.5,
         )
 
         assert "_recall_deadline_monotonic" not in accepted_argument_names("memory_recall")
         assert client.query_recall.call_args.kwargs["recall_deadline_monotonic"] == 123.5
+
+    def test_the_old_deadline_argument_key_is_rejected_for_any_tool(self):
+        client = MagicMock()
+        client.query_recall.return_value = RecallResult(episodes=[], knowledge=[])
+
+        with pytest.raises(ToolContractError, match="_recall_deadline_monotonic"):
+            dispatch_tool_call(
+                client,
+                "memory_recall",
+                {"query": "test", "_recall_deadline_monotonic": 123.5},
+            )
 
     def test_dispatch_seam_rejects_unknown_arguments_for_the_rest_path_too(self):
         """rest.py hands execute_tool_call straight to the tool, so both reject."""

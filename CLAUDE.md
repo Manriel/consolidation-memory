@@ -64,6 +64,14 @@ src/consolidation_memory/
   Nested values inside `episodes` / `code_anchors` and REST query params are outside
   the guard; `rest.EpisodeInput` / `rest.OutcomeAnchorInput` stay permissive so REST
   does not reject what the other surfaces accept.
+- The contract is about argument **names**, not types or bounds: MCP validates
+  against the schema-derived model but clamps what it accepts (`n_results: 0` → `1`,
+  `"5"` → `5`), while dispatch and REST reject the same value.
+- Transport state is a keyword, never an argument key. The recall deadline used to
+  ride in as `_recall_deadline_monotonic`, which needed a global exemption in
+  `reject_unknown_arguments` and so was accepted by every tool. It is now
+  `recall_deadline_monotonic=` on `execute_tool_call` /
+  `dispatch_tool_call`, and the exemption list is gone.
 - Generated docs: `docs/TOOLS.md` comes from `scripts/generate_tool_reference.py`;
   `tests/test_tool_reference_sync.py` fails when it drifts.
 

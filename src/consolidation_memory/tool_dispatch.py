@@ -15,9 +15,9 @@ if TYPE_CHECKING:
 from consolidation_memory.tool_adapter import (
     append_deferred_knowledge_warning,
     effective_include_knowledge,
-    inject_recall_deadline,
     maybe_complete_deferred_recall,
     recall_timeout_seconds,
+    resolve_recall_deadline,
 )
 from consolidation_memory.types import (
     OUTCOME_TYPES,
@@ -68,14 +68,12 @@ def tool_requires_client(name: str) -> bool:
 # hand-maintained table, and the MCP tool signatures publish the same argument
 # names, so both surfaces accept exactly the same keys.
 #
-# Transport-internal arguments: ``tool_adapter.inject_recall_deadline`` puts
-# ``_recall_deadline_monotonic`` into MCP/REST recall payloads so the recall
-# deadline survives the hop into dispatch, and no published schema declares it
-# (callers cannot set it themselves — MCP rejects it). The list is explicit, not
-# a "_ means internal" rule, so an undeclared ``_junk`` key is still rejected and
-# a newly injected internal key has to be declared here. These keys are checked
-# separately from the published set, so they are never double-counted.
-_INTERNAL_ARGUMENT_KEYS = frozenset({"_recall_deadline_monotonic"})
+# The recall deadline travels as its own keyword on ``execute_tool_call``, never
+# as a key in the argument dict. It used to be injected as
+# ``_recall_deadline_monotonic`` and exempted here, which meant any tool accepted
+# it - dispatch_tool_call(client, "memory_store", {..., "_recall_deadline_monotonic": 0})
+# passed and the key was silently dropped, contradicting the claim that unknown
+# arguments are rejected on every surface. There is no exemption list now.
 _ARGUMENT_CONTRACT_HINT = (
     "Extra inputs are not permitted; the published inputSchema for this tool "
     "is the contract."
@@ -116,18 +114,17 @@ def accepted_argument_names(name: str) -> frozenset[str] | None:
 def reject_unknown_arguments(name: str, arguments: Mapping[str, object]) -> None:
     """Raise :class:`ToolContractError` for arguments the published schema omits.
 
-    ``server.py`` currently owns the equivalent MCP-side check through
-    pydantic's ``extra="forbid"``; it should delegate here once this module is
-    reachable from the registration path, so both surfaces share one contract.
+    MCP validates against the per-tool argument model derived from the handler
+    signature before any body runs, so a rejected key never reaches here and
+    pydantic's ``extra="forbid"`` stays the MCP fast path. The delegation that
+    is possible is :func:`server._verify_published_argument_contract`, which asks
+    this function about every registered tool at startup and refuses to serve on
+    any divergence.
     """
     accepted = accepted_argument_names(name)
     if accepted is None:
         return  # unknown tool names fail later with "Unknown tool: <name>"
-    unknown = sorted(
-        str(key)
-        for key in arguments
-        if str(key) not in accepted and str(key) not in _INTERNAL_ARGUMENT_KEYS
-    )
+    unknown = sorted(str(key) for key in arguments if str(key) not in accepted)
     if not unknown:
         return
     raise ToolContractError(
@@ -141,18 +138,7 @@ def _require_client(client: MemoryClient | None, name: str) -> MemoryClient:
     return client
 
 
-def _extract_recall_deadline_monotonic(arguments: Mapping[str, object]) -> float | None:
-    recall_deadline_value = arguments.get("_recall_deadline_monotonic")
-    if recall_deadline_value is None:
-        return None
-    if isinstance(recall_deadline_value, (int, float)):
-        return float(recall_deadline_value)
-    if isinstance(recall_deadline_value, str):
-        return float(recall_deadline_value)
-    raise TypeError(
-        "_recall_deadline_monotonic must be a number, "
-        f"got {type(recall_deadline_value).__name__}"
-    )
+
 
 
 def _run_detect_drift(*, base_ref: str | None = None, repo_path: str | None = None) -> dict[str, Any]:
@@ -474,6 +460,8 @@ def _validate_batch_episodes(episodes: object) -> list[dict[str, Any]]:
 def _memory_recall_result(
     client: MemoryClient,
     arguments: dict[str, Any],
+    *,
+    recall_deadline_monotonic: float | None = None,
 ) -> tuple[dict[str, Any], bool]:
     query = _validate_required_text("query", arguments["query"], max_length=_MAX_QUERY_LENGTH)
     n_results = _validate_bounded_int(
@@ -486,7 +474,6 @@ def _memory_recall_result(
         "include_knowledge",
         arguments.get("include_knowledge", True),
     )
-    recall_deadline_monotonic = _extract_recall_deadline_monotonic(arguments)
     effective_knowledge = effective_include_knowledge(include_knowledge)
     recall_result = client.query_recall(
         query=query,
@@ -523,11 +510,17 @@ def execute_tool_call(
     arguments: dict[str, Any],
     *,
     client: MemoryClient | None = None,
+    recall_deadline_monotonic: float | None = None,
 ) -> dict[str, Any]:
     """Execute a canonical tool call and return a JSON-serializable dict.
 
     Raises :class:`ToolContractError` before touching the client when the
     arguments carry keys the published ``inputSchema`` does not declare.
+
+    ``recall_deadline_monotonic`` is transport state the calling surface resolved
+    for its own timeout budget. It is a keyword rather than an argument key
+    because no published schema declares it: as a key it had to be exempted from
+    the argument check, and that exemption applied to every tool.
     """
     reject_unknown_arguments(name, arguments)
 
@@ -547,7 +540,12 @@ def execute_tool_call(
         )
 
         recall_args = build_ask_recall_arguments(arguments)
-        raw = execute_tool_call("memory_recall", recall_args, client=client)
+        raw = execute_tool_call(
+            "memory_recall",
+            recall_args,
+            client=client,
+            recall_deadline_monotonic=recall_deadline_monotonic,
+        )
         simplified = simplify_recall_result(raw)
         simplified["query"] = recall_args["query"]
         return simplified
@@ -588,12 +586,21 @@ def execute_tool_call(
 
     if name == "memory_recall":
         resolved_client = _require_client(client, name)
-        result, include_knowledge = _memory_recall_result(resolved_client, arguments)
+        result, include_knowledge = _memory_recall_result(
+            resolved_client,
+            arguments,
+            recall_deadline_monotonic=recall_deadline_monotonic,
+        )
 
         def recall_again() -> dict[str, Any]:
-            retry_args = dict(arguments)
-            inject_recall_deadline(retry_args, timeout_seconds=recall_timeout_seconds())
-            payload, _ = _memory_recall_result(resolved_client, retry_args)
+            # The retry runs after the first attempt, so it gets a fresh budget.
+            payload, _ = _memory_recall_result(
+                resolved_client,
+                arguments,
+                recall_deadline_monotonic=resolve_recall_deadline(
+                    recall_timeout_seconds()
+                ),
+            )
             return payload
 
         return maybe_complete_deferred_recall(
@@ -663,7 +670,7 @@ def execute_tool_call(
                 maximum=200,
             ),
             scope=_validate_scope(arguments.get("scope")),
-            recall_deadline_monotonic=_extract_recall_deadline_monotonic(arguments),
+            recall_deadline_monotonic=recall_deadline_monotonic,
         )
         return dataclasses.asdict(claim_search_result)
 
@@ -739,7 +746,7 @@ def execute_tool_call(
                 allow_empty=False,
             ),
             scope=_validate_scope(arguments.get("scope")),
-            recall_deadline_monotonic=_extract_recall_deadline_monotonic(arguments),
+            recall_deadline_monotonic=recall_deadline_monotonic,
         )
         return dataclasses.asdict(outcome_result)
 
@@ -783,7 +790,7 @@ def execute_tool_call(
                 maximum=200,
             ),
             scope=_validate_scope(arguments.get("scope")),
-            recall_deadline_monotonic=_extract_recall_deadline_monotonic(arguments),
+            recall_deadline_monotonic=recall_deadline_monotonic,
         )
         return dataclasses.asdict(outcome_browse_result)
 
@@ -1048,6 +1055,8 @@ def dispatch_tool_call(
     client: MemoryClient,
     name: str,
     arguments: dict[str, Any],
+    *,
+    recall_deadline_monotonic: float | None = None,
 ) -> dict[str, Any]:
     """OpenAI-style wrapper that returns error payloads instead of raising.
 
@@ -1058,7 +1067,12 @@ def dispatch_tool_call(
     so hosts see the same actionable rejection MCP reports via ``isError``.
     """
     try:
-        return execute_tool_call(name, arguments, client=client)
+        return execute_tool_call(
+            name,
+            arguments,
+            client=client,
+            recall_deadline_monotonic=recall_deadline_monotonic,
+        )
     except ToolContractError:
         raise
     except Exception as exc:

@@ -68,9 +68,6 @@ def build_ask_recall_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
     }
     if "scope" in arguments and arguments["scope"] is not None:
         recall_args["scope"] = arguments["scope"]
-    deadline = arguments.get("_recall_deadline_monotonic")
-    if deadline is not None:
-        recall_args["_recall_deadline_monotonic"] = deadline
     return recall_args
 
 

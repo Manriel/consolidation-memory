@@ -59,7 +59,7 @@ class TestSurfaceRecallContract:
         )
 
         assert mock_execute.call_count >= 1
-        transport_args = assert_recall_deadline_injected(mock_execute.call_args.args[1])
+        transport_args = assert_recall_deadline_injected(mock_execute)
         assert transport_args["query"] == "hello"
         assert transport_args["scope"] == scope
         assert dispatch_out == mcp_out == rest_out == expected_payload
@@ -139,7 +139,7 @@ class TestSurfaceClaimSearchContract:
             rest_json=tool_args,
         )
 
-        transport_args = assert_recall_deadline_injected(mock_execute.call_args.args[1])
+        transport_args = assert_recall_deadline_injected(mock_execute)
         assert transport_args["query"] == "python"
         assert transport_args["scope"] == scope
         assert dispatch_out == mcp_out == rest_out == expected_payload

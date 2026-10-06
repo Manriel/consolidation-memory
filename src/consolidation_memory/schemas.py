@@ -1296,10 +1296,22 @@ def dispatch_tool_call(
     client: MemoryClient,
     name: str,
     arguments: dict[str, Any],
+    *,
+    recall_deadline_monotonic: float | None = None,
 ) -> dict[str, Any]:
     """Execute a tool call against a MemoryClient and return the result as a dict.
 
     Raises ``consolidation_memory.tool_dispatch.ToolContractError`` when
     ``arguments`` carry keys the published schema does not declare.
+
+    ``recall_deadline_monotonic`` is a caller-resolved transport budget, not a
+    tool argument: it is passed beside ``arguments`` because no published schema
+    declares it, and a key in ``arguments`` would have to be exempted from the
+    contract check.
     """
-    return _dispatch_tool_call(client, name, arguments)
+    return _dispatch_tool_call(
+        client,
+        name,
+        arguments,
+        recall_deadline_monotonic=recall_deadline_monotonic,
+    )

@@ -60,12 +60,10 @@ class TestSimpleApiHelpers:
         store_args = build_remember_store_arguments(
             {"content": "c", "kind": "fact", "tags": ["a"], "scope": {"namespace": {"slug": "n"}}}
         )
-        recall_args = build_ask_recall_arguments(
-            {"query": "q", "n_results": 3, "_recall_deadline_monotonic": 1.0}
-        )
+        recall_args = build_ask_recall_arguments({"query": "q", "n_results": 3})
 
         assert set(store_args) <= store_published
-        assert set(recall_args) - {"_recall_deadline_monotonic"} <= recall_published
+        assert set(recall_args) <= recall_published
 
     def test_remember_does_not_forward_an_unpublished_surprise(self):
         """``surprise`` is a memory_store parameter, not a memory_remember one.

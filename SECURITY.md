@@ -104,7 +104,15 @@ allowed-argument set derived from the published `inputSchema`
   an unknown body key is HTTP 422 naming the offending keys. Query parameters and
   nested values inside `episodes` / `code_anchors` are not covered.
 - **OpenAI / dispatch** — `tool_dispatch.reject_unknown_arguments` runs first in
-  `execute_tool_call` and raises `ToolContractError`.
+  `execute_tool_call` and raises `ToolContractError`. There is no exemption list:
+  the recall deadline a surface resolves for its own timeout budget travels as a
+  keyword on `execute_tool_call`, not as an argument key, so a caller cannot smuggle
+  it past the contract on any tool.
+
+The guarantee is about argument **names**. Bounds and types are enforced where each
+surface can enforce them: MCP validates against the schema-derived model but clamps
+what it accepts (a `memory_recall` with `n_results: 0` becomes `1`), while dispatch
+and REST reject the same value outright.
 
 `server._verify_published_argument_contract()` cross-checks the SDK-enforced set
 against the dispatch-side set for every registered tool at import and in `lifespan`,

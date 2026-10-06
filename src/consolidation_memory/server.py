@@ -38,8 +38,8 @@ from consolidation_memory.runtime import MemoryRuntime
 from consolidation_memory.tool_adapter import (
     build_recall_search_arguments,
     build_recall_timeout_fallback_result,
-    inject_recall_deadline,
     recall_result_needs_background_warm,
+    resolve_recall_deadline,
     warm_recall_caches,
 )
 from consolidation_memory.tool_contracts import (
@@ -832,6 +832,7 @@ async def _call_tool_payload(
     arguments: dict[str, object],
     *,
     timeout: float | None = None,
+    recall_deadline_monotonic: float | None = None,
 ) -> dict[str, object]:
     client = None
     if tool_requires_client(name):
@@ -843,6 +844,7 @@ async def _call_tool_payload(
         arguments,
         client=client,
         timeout=effective_timeout,
+        recall_deadline_monotonic=recall_deadline_monotonic,
     )
 
 
@@ -879,17 +881,32 @@ async def _call_tool_result(
     arguments: dict[str, object],
     *,
     timeout: float | None = None,
+    recall_deadline_monotonic: float | None = None,
 ) -> _T:  # type: ignore[type-var]
     try:
-        result = await _call_tool_payload(name, arguments, timeout=timeout)
+        result = await _call_tool_payload(
+            name,
+            arguments,
+            timeout=timeout,
+            recall_deadline_monotonic=recall_deadline_monotonic,
+        )
         return _json_payload(result)
     except (TimeoutError, asyncio.TimeoutError):
-        budget = _tool_timeout_seconds(name) if timeout is None else timeout
-        message = (
-            f"{name} timed out after {budget:g}s. "
-            f"Raise CONSOLIDATION_MEMORY_TIMEOUT_{name.upper()} or "
-            "CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS."
-        )
+        # Name the variable that actually governs this call: a caller-supplied
+        # timeout bypasses _tool_timeout_seconds entirely, so the per-tool
+        # CONSOLIDATION_MEMORY_TIMEOUT_<TOOL> override would be advice the
+        # caller cannot act on.
+        if timeout is None:
+            hint = (
+                f"Raise CONSOLIDATION_MEMORY_TIMEOUT_{name.upper()} or "
+                "CONSOLIDATION_MEMORY_TOOL_TIMEOUT_SECONDS."
+            )
+        else:
+            hint = (
+                "The caller fixed this budget, so no environment variable "
+                "applies; raise it where the call is made."
+            )
+        message = f"{name} timed out after {(timeout if timeout is not None else _tool_timeout_seconds(name)):g}s. {hint}"
         logger.error(message)
         return _tool_error_result(message)
     except Exception as exc:
@@ -1161,7 +1178,6 @@ async def memory_recall(
             "hypothesis_competition": hypothesis_competition,
             "scope": scope,
         }
-        inject_recall_deadline(arguments, timeout_seconds=recall_timeout)
 
         try:
             result = await _run_blocking(
@@ -1170,6 +1186,7 @@ async def memory_recall(
                 arguments,
                 client=client,
                 timeout=recall_timeout,
+                recall_deadline_monotonic=resolve_recall_deadline(recall_timeout),
             )
         except (TimeoutError, asyncio.TimeoutError):
             fallback_timeout = _recall_fallback_timeout_seconds()
@@ -1278,11 +1295,11 @@ async def memory_ask(
             "n_results": bounded_n_results,
             "scope": scope,
         }
-        inject_recall_deadline(arguments, timeout_seconds=recall_timeout)
         return await _call_tool_result(
             "memory_ask",
             arguments,
             timeout=recall_timeout,
+            recall_deadline_monotonic=resolve_recall_deadline(recall_timeout),
         )
     except Exception as exc:
         logger.exception("memory_ask failed")

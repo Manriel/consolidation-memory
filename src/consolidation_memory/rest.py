@@ -43,7 +43,7 @@ from consolidation_memory.runtime import MemoryRuntime
 from consolidation_memory.tool_adapter import (
     build_recall_search_arguments,
     build_recall_timeout_fallback_result,
-    inject_recall_deadline,
+    resolve_recall_deadline,
 )
 from consolidation_memory.tool_dispatch import execute_tool_call, tool_requires_client
 
@@ -455,6 +455,7 @@ def _build_execute(runtime: MemoryRuntime) -> ExecuteFn:
         arguments: dict[str, object],
         *,
         timeout: float | None = None,
+        recall_deadline_monotonic: float | None = None,
     ) -> dict[str, object]:
         client = None
         if tool_requires_client(name):
@@ -479,6 +480,7 @@ def _build_execute(runtime: MemoryRuntime) -> ExecuteFn:
                 arguments,
                 client=client,
                 timeout=timeout,
+                recall_deadline_monotonic=recall_deadline_monotonic,
             )
         except TimeoutError as exc:
             timeout_detail = (
@@ -545,16 +547,14 @@ def _register_memory_routes(app: FastAPI, execute: ExecuteFn) -> None:
     @app.post("/memory/ask")
     async def ask(req: SimpleAskRequest):
         """Search memory with a plain-language question; returns compact results."""
-        from consolidation_memory.simple_api import build_ask_recall_arguments
-
         tool_args = req.model_dump(exclude_none=True)
-        recall_args = build_ask_recall_arguments(tool_args)
         timeout_seconds = _recall_timeout_seconds()
-        inject_recall_deadline(recall_args, timeout_seconds=timeout_seconds)
-        deadline = recall_args.get("_recall_deadline_monotonic")
-        if deadline is not None:
-            tool_args["_recall_deadline_monotonic"] = deadline
-        return await execute("memory_ask", tool_args, timeout=timeout_seconds)
+        return await execute(
+            "memory_ask",
+            tool_args,
+            timeout=timeout_seconds,
+            recall_deadline_monotonic=resolve_recall_deadline(timeout_seconds),
+        )
 
     @app.post("/memory/store")
     async def store(req: StoreRequest):
@@ -576,9 +576,13 @@ def _register_memory_routes(app: FastAPI, execute: ExecuteFn) -> None:
         payload["content_types"] = cast(list[str] | None, req.content_types)
         timeout_seconds = _recall_timeout_seconds()
         fallback_timeout = _recall_fallback_timeout_seconds()
-        inject_recall_deadline(payload, timeout_seconds=timeout_seconds)
         try:
-            return await execute("memory_recall", payload, timeout=timeout_seconds)
+            return await execute(
+                "memory_recall",
+                payload,
+                timeout=timeout_seconds,
+                recall_deadline_monotonic=resolve_recall_deadline(timeout_seconds),
+            )
         except HTTPException as exc:
             if exc.status_code != 408:
                 raise
@@ -630,8 +634,11 @@ def _register_memory_routes(app: FastAPI, execute: ExecuteFn) -> None:
     async def search_claims(req: ClaimSearchRequest):
         """Search claims by text with optional type and temporal filtering."""
         payload = req.model_dump()
-        inject_recall_deadline(payload, timeout_seconds=_recall_timeout_seconds())
-        return await execute("memory_claim_search", payload)
+        return await execute(
+            "memory_claim_search",
+            payload,
+            recall_deadline_monotonic=resolve_recall_deadline(_recall_timeout_seconds()),
+        )
 
     @app.post("/memory/outcomes/record")
     async def record_outcome(req: OutcomeRecordRequest):
@@ -639,15 +646,21 @@ def _register_memory_routes(app: FastAPI, execute: ExecuteFn) -> None:
         payload = req.model_dump()
         if req.code_anchors is not None:
             payload["code_anchors"] = [anchor.model_dump() for anchor in req.code_anchors]
-        inject_recall_deadline(payload, timeout_seconds=_recall_timeout_seconds())
-        return await execute("memory_outcome_record", payload)
+        return await execute(
+            "memory_outcome_record",
+            payload,
+            recall_deadline_monotonic=resolve_recall_deadline(_recall_timeout_seconds()),
+        )
 
     @app.post("/memory/outcomes/browse")
     async def browse_outcomes(req: OutcomeBrowseRequest):
         """Browse recorded action outcomes."""
         payload = req.model_dump()
-        inject_recall_deadline(payload, timeout_seconds=_recall_timeout_seconds())
-        return await execute("memory_outcome_browse", payload)
+        return await execute(
+            "memory_outcome_browse",
+            payload,
+            recall_deadline_monotonic=resolve_recall_deadline(_recall_timeout_seconds()),
+        )
 
     @app.post("/memory/detect-drift")
     async def detect_drift(req: DetectDriftRequest):

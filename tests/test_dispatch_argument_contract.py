@@ -357,19 +357,35 @@ class TestErrorSurface:
         assert result == {"error": "Unknown tool: nonexistent_tool"}
 
 
-class TestInternalArgumentPassthrough:
-    def test_recall_deadline_argument_is_accepted_but_never_published(self):
+class TestRecallDeadlineIsNotAnArgument:
+    """The deadline travels as a keyword, so no exemption list exists.
+
+    As an injected argument key it had to be exempted from the unknown-argument
+    check, and that exemption was global: ``memory_store`` accepted
+    ``_recall_deadline_monotonic`` and silently dropped it, which is exactly what
+    SECURITY.md says cannot happen.
+    """
+
+    def test_recall_deadline_keyword_reaches_the_client(self):
         client = MagicMock()
         client.query_recall.return_value = RecallResult(episodes=[], knowledge=[])
 
         execute_tool_call(
             "memory_recall",
-            {"query": "deploy", "_recall_deadline_monotonic": 123.5},
+            {"query": "deploy"},
             client=client,
+            recall_deadline_monotonic=123.5,
         )
 
-        assert "_recall_deadline_monotonic" not in (accepted_argument_names("memory_recall") or ())
         assert client.query_recall.call_args.kwargs["recall_deadline_monotonic"] == 123.5
+
+    @pytest.mark.parametrize("name", ["memory_store", "memory_recall", "memory_status"])
+    def test_the_old_argument_key_is_now_rejected_for_every_tool(self, name: str):
+        arguments = {"query": "deploy"} if name != "memory_store" else {"content": "x"}
+        arguments["_recall_deadline_monotonic"] = 123.5
+
+        with pytest.raises(ToolContractError, match="_recall_deadline_monotonic"):
+            dispatch_tool_call(MagicMock(), name, arguments)
 
     def test_undeclared_internal_looking_key_is_still_rejected(self):
         with pytest.raises(ToolContractError, match="_junk"):
@@ -382,7 +398,8 @@ class TestInternalArgumentPassthrough:
         result = dispatch_tool_call(
             client,
             "memory_ask",
-            {"query": "deploy", "_recall_deadline_monotonic": 7.5},
+            {"query": "deploy"},
+            recall_deadline_monotonic=7.5,
         )
 
         assert result["query"] == "deploy"
