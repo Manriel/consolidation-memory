@@ -260,7 +260,7 @@ with MemoryClient(auto_consolidate=False) as mem:
         content_type="solution",
         tags=["pytest", "ci"],
     )
-    print(mem.recall("pytest fixture order flake").episodes[0].content)
+    print(mem.recall("pytest fixture order flake").episodes[0]["content"])
 ```
 
 Then wire it into your agent: [Connect your agent (MCP)](#connect-your-agent-mcp).
