@@ -128,10 +128,12 @@ refactors; strike items off as they close.
 
 **Open**
 
-- **P1 Unvalidated contract subtrees**: 32 of 184 success-arm properties publish as
+- **P1 Unvalidated contract subtrees**: 32 of 234 success-arm properties publish as
   `dict[str, Any]` / `list[dict[str, Any]]`, so their subtrees are validated as "is
   an object" and nothing more. `tests/test_output_contract_payload_typing.py` ratchets
-  the number; do not raise it.
+  the number; do not raise it. The walk resolves `$ref` into the root `$defs`, so
+  nested output models (`HealthOutput`, `ScopeUsageEntry`, `DriftClaimImpactOutput`)
+  are counted too — 50 of the 234 live there.
 - **P1 Changelog ranking rule**: `changelog_builder` ranks before capping
   (`DEFAULT_SUBJECT_LIMIT = 200`), so user-visible commits are never displaced by
   `docs`/`chore`. Two consequences to remember: `--limit` exists on

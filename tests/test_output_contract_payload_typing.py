@@ -11,7 +11,8 @@ ceiling below must not move. Raising it is a deliberate decision, not a side
 effect of adding a field — the test fails on growth so the number gets argued
 about in review instead of drifting.
 
-Current exposure: 32 of 182 published success-arm properties.
+Current exposure: 32 of 234 published success-arm properties, including the
+nested models hoisted into root ``$defs``.
 """
 
 from __future__ import annotations
@@ -43,8 +44,32 @@ def _is_opaque(spec: Any) -> bool:
     return False
 
 
-def _collect(node: Any, path: str, total: list[str], opaque: list[str]) -> None:
+def _collect(
+    node: Any,
+    path: str,
+    total: list[str],
+    opaque: list[str],
+    *,
+    defs: dict[str, Any] | None = None,
+) -> None:
+    """Record every property under ``node``, resolving ``$ref`` into ``$defs``.
+
+    ``_publish_output_schemas`` hoists ``$defs`` to the schema root beside
+    ``anyOf``, not inside the success arm, so a walk of ``anyOf[0]`` alone never
+    sees the nested contract models (``HealthOutput``, ``ScopeUsageEntry``,
+    ``DriftClaimImpactOutput`` and the rest). They are properties like any other
+    and a new ``dict[str, Any]`` inside one has to count.
+    """
     if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and defs:
+            name = ref.rsplit("/", 1)[-1]
+            target = defs.get(name)
+            if target is not None and name not in path.split("."):
+                # One hop is enough: contract models reference each other
+                # without cycles, and the guard stops a self-reference.
+                _collect(target, f"{path}.{name}", total, opaque, defs=defs)
+                return
         properties = node.get("properties")
         if isinstance(properties, dict):
             for name, spec in properties.items():
@@ -52,12 +77,17 @@ def _collect(node: Any, path: str, total: list[str], opaque: list[str]) -> None:
                 total.append(qualified)
                 if _is_opaque(spec):
                     opaque.append(qualified)
+                # Descend into the spec too: a property that is a `$ref` (under
+                # `anyOf`, or bare) points at a model in `$defs`, and an inline
+                # nested object publishes properties of its own. Both are
+                # properties a caller depends on.
+                _collect(spec, qualified, total, opaque, defs=defs)
         for key, value in node.items():
-            if key != "properties":
-                _collect(value, path, total, opaque)
+            if key not in ("properties", "$defs"):
+                _collect(value, path, total, opaque, defs=defs)
     elif isinstance(node, list):
         for item in node:
-            _collect(item, path, total, opaque)
+            _collect(item, path, total, opaque, defs=defs)
 
 
 def _exposure() -> tuple[list[str], list[str]]:
@@ -68,7 +98,8 @@ def _exposure() -> tuple[list[str], list[str]]:
         schema = tool.output_schema or {}
         arms = schema.get("anyOf")
         success = arms[0] if isinstance(arms, list) and arms else schema
-        _collect(success, tool.name, total, opaque)
+        defs = schema.get("$defs") or success.pop("$defs", None) or {}
+        _collect(success, tool.name, total, opaque, defs=defs)
     return total, opaque
 
 
@@ -99,6 +130,42 @@ def test_unvalidated_surface_does_not_grow() -> None:
     )
 
 
+def _descriptions_by_path(
+    node: Any,
+    path: str,
+    found: dict[str, str],
+    *,
+    defs: dict[str, Any] | None = None,
+) -> None:
+    """Same walk as :func:`_collect`, but recording each property's description.
+
+    Looking the description up by leaf name in the success arm missed every
+    nested-model property: those live in ``$defs`` under their own name, so the
+    lookup returned an empty spec and would have failed for the wrong reason.
+    """
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and defs:
+            name = ref.rsplit("/", 1)[-1]
+            target = defs.get(name)
+            if target is not None and name not in path.split("."):
+                _descriptions_by_path(target, f"{path}.{name}", found, defs=defs)
+                return
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            for name, spec in properties.items():
+                qualified = f"{path}.{name}" if path else name
+                if isinstance(spec, dict):
+                    found[qualified] = str(spec.get("description") or "")
+                _descriptions_by_path(spec, qualified, found, defs=defs)
+        for key, value in node.items():
+            if key not in ("properties", "$defs"):
+                _descriptions_by_path(value, path, found, defs=defs)
+    elif isinstance(node, list):
+        for item in node:
+            _descriptions_by_path(item, path, found, defs=defs)
+
+
 def test_every_opaque_property_still_declares_a_description() -> None:
     """Opaque is acceptable; undocumented is not."""
     missing: list[str] = []
@@ -106,14 +173,30 @@ def test_every_opaque_property_still_declares_a_description() -> None:
         schema = tool.output_schema or {}
         arms = schema.get("anyOf")
         success = arms[0] if isinstance(arms, list) and arms else schema
+        defs = schema.get("$defs") or success.pop("$defs", None) or {}
+        found: dict[str, str] = {}
+        _descriptions_by_path(success, tool.name, found, defs=defs)
+
         for path in OPAQUE:
             if not path.startswith(f"{tool.name}."):
                 continue
-            name = path.split(".")[-1]
-            spec = (success.get("properties") or {}).get(name) or {}
-            if not str(spec.get("description") or "").strip():
+            if not found.get(path, "").strip():
                 missing.append(path)
     assert not missing, f"unvalidated properties without a description: {missing}"
+
+
+def test_nested_model_properties_are_inside_the_ratchet() -> None:
+    """The walk has to reach the models hoisted into root ``$defs``.
+
+    Without this, adding a ``dict[str, Any]`` inside a nested output model moved
+    no number and the ratchet stayed green.
+    """
+    nested = [path for path in TOTAL if path.count(".") > 1]
+    assert nested, (
+        "no nested-model property was counted; the walk is not following $defs, "
+        "so nested properties escape the ratchet"
+    )
+    assert any("HealthOutput" in path or "ScopeUsageEntry" in path for path in nested)
 
 
 @pytest.mark.parametrize("kind", ["object", "array"])
