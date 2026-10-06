@@ -30,6 +30,7 @@ from scripts.changelog_builder import (
     emit_selection_report,
     extract_unreleased_subjects,
     insert_version_entry,
+    positive_limit,
     remove_unreleased_section,
     select_release_subjects,
 )
@@ -161,6 +162,13 @@ def add_changelog_entry(
     text = CHANGELOG.read_text(encoding="utf-8")
     unreleased_notes = extract_unreleased_subjects(text)
     release_notes = unreleased_notes or notes
+    # The Unreleased bullets are re-capped here, so this is the last point where a
+    # truncation can still be reported. emit_warning=False suppressed it, and a
+    # --limit below the number of Unreleased entries shipped a truncated release
+    # entry with no diagnostic, against RELEASE_AUTOMATION.md's "truncation is
+    # never silent". emit_selection_report always reports; it prints nothing when
+    # nothing was dropped.
+    emit_selection_report(select_release_subjects(release_notes, limit=limit))
     updated, inserted = insert_version_entry(
         text,
         new_version,
@@ -451,10 +459,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--limit",
-        type=int,
+        type=positive_limit,
         default=DEFAULT_SUBJECT_LIMIT,
         help=(
-            "Maximum changelog bullets for this release. Internal-only commits "
+            "Maximum changelog bullets for this release, at least 1. Internal-only commits "
             "(docs/chore/test/ci/refactor/style/build) are dropped before user-visible ones, "
             f"and truncation is reported. (default: {DEFAULT_SUBJECT_LIMIT})"
         ),

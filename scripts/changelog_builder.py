@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import sys
@@ -207,6 +208,26 @@ class SubjectSelection:
         )
 
 
+def positive_limit(value: str) -> int:
+    """argparse type for ``--limit``: at least one bullet, never zero.
+
+    ``select_release_subjects`` used to clamp with ``max(1, limit)``, so
+    ``--limit 0`` and ``--limit -1`` silently became 1: the run produced a
+    one-bullet changelog and the truncation report named a limit the caller never
+    asked for. Rejecting at the parser is louder and honest about intent.
+    """
+    try:
+        parsed = int(value)
+    except ValueError as exc:  # pragma: no cover - argparse formats the message
+        raise argparse.ArgumentTypeError(f"limit must be an integer, got {value!r}") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError(
+            f"limit must be at least 1, got {parsed}; "
+            "use --limit to cap, not to remove entries"
+        )
+    return parsed
+
+
 def select_release_subjects(
     subjects: list[str],
     *,
@@ -217,8 +238,14 @@ def select_release_subjects(
     Ranking guarantees that internal-only commits are dropped before user-visible
     ones when the limit bites. Returns the audit trail instead of warning, so
     callers decide how loudly to report it.
+
+    ``limit`` below 1 is rejected rather than clamped: the CLI validates it with
+    :func:`positive_limit`, and a library caller passing 0 gets told instead of
+    quietly receiving a single bullet.
     """
-    budget = max(1, limit)
+    if limit < 1:
+        raise ValueError(f"limit must be at least 1, got {limit}")
+    budget = limit
     collected: list[str] = []
     seen: set[str] = set()
     ignored = 0

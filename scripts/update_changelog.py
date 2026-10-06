@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
 from scripts.changelog_builder import (
     DEFAULT_SUBJECT_LIMIT,
     emit_selection_report,
+    positive_limit,
     select_release_subjects,
     upsert_unreleased_section,
 )
@@ -90,10 +91,10 @@ def main() -> None:
     parser.add_argument("--push", action="store_true", help="Push commit to origin/main (requires --commit).")
     parser.add_argument(
         "--limit",
-        type=int,
+        type=positive_limit,
         default=DEFAULT_SUBJECT_LIMIT,
         help=(
-            "Maximum changelog bullets per release. Internal-only commits "
+            "Maximum changelog bullets per release, at least 1. Internal-only commits "
             "(docs/chore/test/ci/refactor/style/build) are dropped before user-visible ones. "
             f"Truncation is reported, never silent (default: {DEFAULT_SUBJECT_LIMIT})."
         ),
